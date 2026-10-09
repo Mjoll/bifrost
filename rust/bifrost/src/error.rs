@@ -3,6 +3,8 @@ pub enum Error {
   NotFound,
   AlreadyExists,
   ShmemError(shared_memory::ShmemError),
+  NotEnoughBytes,
+  ByteMuck(bytemuck::PodCastError),
 }
 
 impl From<shared_memory::ShmemError> for Error {
@@ -25,5 +27,11 @@ impl From<shared_memory::ShmemError> for Error {
       }
     }
 
+  }
+}
+
+impl From<bytemuck::PodCastError> for Error {
+  fn from(value: bytemuck::PodCastError) -> Self {
+    Error::ByteMuck(value)
   }
 }
