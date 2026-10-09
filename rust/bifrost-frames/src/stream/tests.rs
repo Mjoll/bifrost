@@ -202,3 +202,49 @@ fn test_stream_2_pool_migration() {
 
   println!("Main thread: {stats:?}");
 }
+
+#[test]
+#[ignore = "Currently migration transfer return queue ownership to the process doing the migration"]
+fn test_stream_3_return_queue_ownership() {
+  let stream_name = "bifrost-frames-test-stream-3";
+
+  let _owned_stream = Stream::new(stream_name, 1, 1).unwrap();
+
+  let frame_info = FrameInfo {
+    frame_rate: Fraction {
+      numerator: 25,
+      denominator: 1,
+    },
+    video: Some(VideoInfo {
+      resolution: Resolution {
+        width: 1920,
+        height: 1080,
+        pixel_aspect_ratio: Fraction::one(),
+      },
+      pixel_format: PixelFormat::RGBA8,
+      field_order: FieldOrder::Progressive,
+    }),
+    audio: Some(AudioInfo {
+      sample_rate: 48000,
+      channel_count: 2,
+      format: crate::AudioFormat::S16,
+    }),
+  };
+
+  {
+    let mut non_owner_stream = Stream::open(stream_name).unwrap();
+
+    let mut frames = Vec::new();
+    for _ in 0..5 {
+      let frame = non_owner_stream.allocate(frame_info).unwrap();
+      frames.push(frame);
+    }
+    for frame in frames.into_iter() {
+      non_owner_stream.release_frame(frame).unwrap();
+    }
+  }
+
+  {
+    let _ = Stream::open(stream_name).unwrap();
+  }
+}

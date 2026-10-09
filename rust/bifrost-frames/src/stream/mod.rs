@@ -91,8 +91,26 @@ impl Stream {
       let return_queue_name =
         return_queue_shm_name(prefix, lock.return_queue_generation_id)?;
 
-      let queue = FrameQueue::open(queue_name)?;
-      let return_queue = FrameQueue::open(return_queue_name)?;
+      // If we managed to open the stream SHM we expect to be able to open
+      // the queues as well. This is why we map NotFound to CorruptStream
+      // because this would indicate something is wrong.
+
+      let queue = FrameQueue::open(queue_name)
+        .map_err(|error| {
+          match error {
+            Error::NotFound => Error::CorruptStream,
+            other => other,
+          }
+        })?;
+
+      let return_queue = FrameQueue::open(return_queue_name)
+        .map_err(|error| {
+          match error {
+            Error::NotFound => Error::CorruptStream,
+            other => other,
+          }
+        })?;
+
       (queue, return_queue, lock.return_queue_generation_id)
     };
 

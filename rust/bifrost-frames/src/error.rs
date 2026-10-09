@@ -18,6 +18,7 @@ pub enum Error {
   Timeout,
   QueueClosed,
   StreamFormatChange,
+  CorruptStream,
 }
 
 impl From<bifrost::Error> for Error {
