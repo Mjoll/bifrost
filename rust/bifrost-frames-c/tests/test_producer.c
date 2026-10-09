@@ -1,6 +1,7 @@
 #include <string.h>
 #include "bifrost_frames.h"
 #include "common.h"
+#include "interrupt_handler.h"
 
 int main() {
   int ret = 1;
@@ -9,6 +10,8 @@ int main() {
   BifrostFrameLock lock = NULL;
 
   BIFROST_CHECK(bifrost_stream_create(TEST_QUEUE_NAME, 5, 10, &stream));
+
+  setup_interrupt_handler(stream);
 
   const size_t timeout_ms = 5000;
 
@@ -45,13 +48,16 @@ int main() {
 
 fail:
   fprintf(stderr, "Performing clean up\n");
+
   if (lock != NULL) {
     bifrost_frame_unlock(&lock);
   }
   if (frame != NULL) {
     bifrost_frame_release(stream, &frame);
   }
+
   if (stream != NULL) {
+    tear_down_interrupt_handler(stream);
     bifrost_stream_destroy(&stream);
   }
 

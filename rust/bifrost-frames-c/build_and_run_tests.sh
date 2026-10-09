@@ -64,7 +64,7 @@ LDFLAGS="-L${RUST_TARGET_DIR} -lbifrost_frames_c"
 CFLAGS="$FLAGS -Wall -Werror -Iinclude"
 
 for PROGRAM in test_producer test_consumer; do
-  $CC $CFLAGS tests/${PROGRAM}.c $LDFLAGS -o "${BUILD_OUTPUT_DIR}/${PROGRAM}"
+  $CC $CFLAGS tests/interrupt_handler.c tests/${PROGRAM}.c $LDFLAGS -o "${BUILD_OUTPUT_DIR}/${PROGRAM}"
 done
 
 export LD_LIBRARY_PATH="${RUST_TARGET_DIR}"
