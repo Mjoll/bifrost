@@ -323,3 +323,96 @@ fn test_stream_4_wait_for_drained() {
     assert_eq!(expected, frame_number as usize);
   }
 }
+
+#[test]
+fn test_stream_5_interrupt() {
+  let stream_name = "bifrost-frames-test-stream-5";
+
+  let mut stream = Stream::new(stream_name, 5, 10).unwrap();
+
+  use std::sync::{
+    Arc,
+    Mutex,
+  };
+
+  let interruped = Arc::new(Mutex::new(false));
+  let interrupted_clone = interruped.clone();
+
+  stream.register_interrupt_callback(
+    move || *interruped.lock().unwrap(),
+    Duration::from_millis(10),
+  );
+
+  fn thread_function(
+    stream_name: &str,
+    interruped: Arc<Mutex<bool>>,
+  ) -> Result<(), Error> {
+    let mut stream = Stream::open(stream_name)?;
+    let timeout = Duration::from_secs(5);
+    while let Some(mut frame) = stream.pop(timeout)? {
+      {
+        let lock = frame.lock(timeout)?;
+        if lock.frame_number() == 50 {
+          *interruped.lock().unwrap() = true;
+          return Ok(());
+        }
+      }
+      stream.release_frame(frame).unwrap();
+    }
+    Ok(())
+  }
+
+  let frame_info = FrameInfo {
+    frame_rate: Fraction {
+      numerator: 25,
+      denominator: 1,
+    },
+    video: Some(VideoInfo {
+      resolution: Resolution {
+        width: 1920,
+        height: 1080,
+        pixel_aspect_ratio: Fraction::one(),
+      },
+      pixel_format: PixelFormat::RGBA8,
+      field_order: FieldOrder::Progressive,
+    }),
+    audio: Some(AudioInfo {
+      sample_rate: 48000,
+      channel_count: 2,
+      format: crate::AudioFormat::S16,
+    }),
+  };
+
+  let join_handle = thread::spawn(move || {
+    thread_function(stream_name, interrupted_clone).unwrap()
+  });
+
+  let duration = Duration::from_secs(5);
+  let count = 100;
+  let mut interrupted_at = None;
+  for frame_number in 0..count {
+    let mut frame = stream.allocate(frame_info).unwrap();
+    {
+      let mut lock = frame.lock_mut(duration).unwrap();
+      lock.set_frame_number(frame_number);
+    }
+
+    match stream.push(&mut Some(frame), duration) {
+      Err(Error::Interrupted) => {
+        interrupted_at = Some(frame_number);
+        break;
+      },
+      Err(error) => Err(error).unwrap(),
+      Ok(()) => { }
+    }
+  }
+
+  stream.close().unwrap();
+
+  join_handle.join().unwrap();
+
+  let interrupted_at = interrupted_at.expect("Expected to be interrupted");
+
+  assert!(interrupted_at > 10 && interrupted_at < 90);
+}
+

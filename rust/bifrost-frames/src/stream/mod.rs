@@ -135,6 +135,18 @@ impl Stream {
     Ok(stream)
   }
 
+  pub fn register_interrupt_callback<F: FnMut() -> bool + Send + 'static>(
+    &mut self,
+    callback: F,
+    interval: Duration,
+  ) {
+    self.queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn clear_interrupt_callback(&mut self) {
+    self.queue.clear_interrupt_callback();
+  }
+
   pub fn stats(&mut self) -> Result<StreamStats, Error> {
     let lock = self.stream.data()?.mutable.to_lock(TIMEOUT)?;
     Ok(StreamStats {
@@ -294,7 +306,10 @@ impl Stream {
     }
   }
 
-  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+  pub fn wait_until_drained(
+    &mut self,
+    timeout: Duration,
+  ) -> Result<(), Error> {
     self.queue.wait_until_drained(timeout)
   }
 
