@@ -20,6 +20,7 @@ pub enum Error {
   StreamFormatChange,
   CorruptStream,
   Interrupted,
+  AsyncStreamThreadDead,
 }
 
 impl From<bifrost::Error> for Error {

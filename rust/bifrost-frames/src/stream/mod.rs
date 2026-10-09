@@ -15,6 +15,9 @@ use super::{
   FrameQueue,
 };
 
+mod async_stream;
+pub use async_stream::AsyncStream;
+
 pub struct Stream {
   prefix: bifrost::Name,
   queue: FrameQueue,
