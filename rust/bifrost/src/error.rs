@@ -5,6 +5,20 @@ pub enum Error {
   ShmemError(shared_memory::ShmemError),
   NotEnoughBytes,
   ByteMuck(bytemuck::PodCastError),
+  /**
+   *  In order to keep memory compatible with both 64-bit and 32-bit usize
+   *  values are serialized as u32. If any of the usize values are larger
+   *  than u32 MAX this error will be thrown. Places where this might be an
+   *  issue:
+   *
+   *    Mapped vector sizes
+   *    Mapped memory size
+   *    Mapped memory alignment
+   *
+   *  In other words, quite rare to occur. But worth keeping in mind that
+   *  shared memory over 4 GB may run into these issues.
+   */
+  ValueTooLarge,
 }
 
 impl From<shared_memory::ShmemError> for Error {

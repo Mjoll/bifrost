@@ -7,6 +7,7 @@ pub use error::Error;
 
 mod memory_mapping;
 pub use memory_mapping::{
+  MappableVec,
   MemoryLayout,
   MemoryMappable,
   SlicerMut,

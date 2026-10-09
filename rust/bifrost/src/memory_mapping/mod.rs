@@ -9,6 +9,8 @@ pub use slicer::{
 };
 
 mod pod;
+mod mappable_vec;
+pub use mappable_vec::MappableVec;
 
 pub trait MemoryMappable : 'static {
   type Mut<'t>;
