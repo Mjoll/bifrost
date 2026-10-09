@@ -363,6 +363,41 @@ struct BifrostFrameInfo {
   audio: *const BifrostAudioInfo,
 }
 
+impl BifrostFrameInfo {
+  unsafe fn to_frame_info(self) -> Result<bifrost_frames::FrameInfo, bifrost_frames::Error> {
+    let frame_info = bifrost_frames::FrameInfo {
+      frame_rate: bifrost_frames::Fraction {
+        numerator: self.frame_rate.numerator,
+        denominator: self.frame_rate.denominator,
+      },
+      video: if self.video != ptr::null() {
+        let in_video : BifrostVideoInfo = unsafe { ptr::read_unaligned(self.video) };
+
+        Some(bifrost_frames::VideoInfo {
+          resolution: in_video.resolution,
+          field_order: bifrost_frames::FieldOrder::from_u32(in_video.field_order)?,
+          pixel_format: bifrost_frames::PixelFormat::from_u32(in_video.pixel_format)?,
+        })
+      } else {
+        None
+      },
+      audio: if self.audio != ptr::null() {
+        let in_audio : BifrostAudioInfo = unsafe { ptr::read_unaligned(self.audio) };
+
+        Some(bifrost_frames::AudioInfo {
+          sample_rate: in_audio.sample_rate,
+          channel_count: in_audio.channel_count,
+          format: bifrost_frames::AudioFormat::from_u32(in_audio.format)?,
+        })
+      } else {
+        None
+      },
+    };
+
+    Ok(frame_info)
+  }
+}
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn bifrost_stream_allocate_frame(
   in_stream: *mut bifrost_frames::Stream,
@@ -390,34 +425,7 @@ unsafe extern "C" fn bifrost_stream_allocate_frame(
 
     let in_frame_info : BifrostFrameInfo = unsafe { ptr::read_unaligned(in_frame_info) };
 
-    let frame_info = bifrost_frames::FrameInfo {
-      frame_rate: bifrost_frames::Fraction {
-        numerator: in_frame_info.frame_rate.numerator,
-        denominator: in_frame_info.frame_rate.denominator,
-      },
-      video: if in_frame_info.video != ptr::null() {
-        let in_video : BifrostVideoInfo = unsafe { ptr::read_unaligned(in_frame_info.video) };
-
-        Some(bifrost_frames::VideoInfo {
-          resolution: in_video.resolution,
-          field_order: bifrost_frames::FieldOrder::from_u32(in_video.field_order)?,
-          pixel_format: bifrost_frames::PixelFormat::from_u32(in_video.pixel_format)?,
-        })
-      } else {
-        None
-      },
-      audio: if in_frame_info.audio != ptr::null() {
-        let in_audio : BifrostAudioInfo = unsafe { ptr::read_unaligned(in_frame_info.audio) };
-
-        Some(bifrost_frames::AudioInfo {
-          sample_rate: in_audio.sample_rate,
-          channel_count: in_audio.channel_count,
-          format: bifrost_frames::AudioFormat::from_u32(in_audio.format)?,
-        })
-      } else {
-        None
-      },
-    };
+    let frame_info = unsafe { in_frame_info.to_frame_info()? };
 
     let frame = stream.allocate(frame_info)?;
 
@@ -733,4 +741,334 @@ unsafe extern "C" fn bifrost_frame_lock_query_audio_buffer(
   unsafe { mut_buffer.write(out_buffer); }
 
   return BifrostStatus::Ok;
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_create(
+  name: *const i8,
+  queue_size: usize,
+  pool_size: usize,
+  out_stream: *mut *mut bifrost_frames::AsyncStream,
+) -> BifrostStatus {
+  if name == ptr::null() {
+    return BifrostStatus::InvalidArgument;
+  }
+  if queue_size == 0 {
+    return BifrostStatus::InvalidArgument;
+  }
+  if pool_size == 0 {
+    return BifrostStatus::InvalidArgument;
+  }
+  if out_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+  if unsafe { *out_stream } != ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  to_status_code(move || {
+    let name = unsafe { c_string_to_string(name)? };
+    let stream = bifrost_frames::Stream::new(name, queue_size, pool_size)?;
+    let async_stream = bifrost_frames::AsyncStream::new(stream)?;
+    unsafe { *out_stream = Box::leak(Box::new(async_stream)) };
+    Ok(())
+  })
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_open(
+  name: *const i8,
+  out_stream: *mut *mut bifrost_frames::AsyncStream,
+) -> BifrostStatus {
+  if name == ptr::null() {
+    return BifrostStatus::InvalidArgument;
+  }
+  if out_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+  if unsafe { *out_stream } != ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  to_status_code(move || {
+    let name = unsafe { c_string_to_string(name)? };
+    let stream = bifrost_frames::Stream::open(name)?;
+    let async_stream = bifrost_frames::AsyncStream::new(stream)?;
+    unsafe { *out_stream = Box::leak(Box::new(async_stream)) };
+    Ok(())
+  })
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_destroy(
+  inout_stream: *mut *mut bifrost_frames::AsyncStream,
+) -> BifrostStatus {
+  if inout_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+  unsafe {
+    if  *inout_stream != ptr::null_mut() {
+      let _ = Box::from_raw(*inout_stream);
+      *inout_stream = ptr::null_mut();
+    }
+  }
+  BifrostStatus::Ok
+}
+
+struct PushCallback {
+  callback: extern "C" fn (*mut c_void, BifrostStatus) -> (),
+  user_data: *mut c_void,
+}
+
+impl PushCallback {
+  fn call(self, status: BifrostStatus) {
+    (self.callback)(self.user_data, status);
+  }
+}
+
+unsafe impl Send for PushCallback { }
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_push(
+  in_stream: *mut bifrost_frames::AsyncStream,
+  timeout_ms: u64,
+  inout_frame: *mut *mut bifrost_frames::Frame,
+  callback: Option<extern "C" fn (*mut c_void, BifrostStatus) -> ()>,
+  user_data: *mut c_void,
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  to_status_code(move || {
+    let stream : &mut bifrost_frames::AsyncStream = unsafe { &mut *in_stream };
+
+    let frame = unsafe { Box::from_raw(*inout_frame) };
+    unsafe { *inout_frame = ptr::null_mut(); }
+
+    let callback = PushCallback { callback, user_data };
+
+    stream.push(
+      *frame,
+      Duration::from_millis(timeout_ms),
+      move |result| {
+        match result {
+          Ok(()) => callback.call(BifrostStatus::Ok),
+          Err(error) => callback.call(error.into()),
+        }
+      }
+    )?;
+
+    Ok(())
+  })
+}
+
+struct PopCallback {
+  callback: extern "C" fn (*mut c_void, BifrostStatus, *mut bifrost_frames::Frame),
+  user_data: *mut c_void
+}
+
+impl PopCallback {
+  fn call(
+    self,
+    result: Result<Option<bifrost_frames::Frame>, bifrost_frames::Error>
+  ) {
+    match result {
+      Ok(Some(frame)) => {
+        (self.callback)(self.user_data, BifrostStatus::Ok, Box::leak(Box::new(frame)));
+      },
+      Ok(None) => {
+        (self.callback)(self.user_data, BifrostStatus::Ok, ptr::null_mut());
+      },
+      Err(error) => {
+        (self.callback)(self.user_data, error.into(), ptr::null_mut());
+      }
+    }
+  }
+}
+
+unsafe impl Send for PopCallback { }
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_pop(
+  in_stream: *mut bifrost_frames::AsyncStream,
+  timeout_ms: u64,
+  callback: Option<extern "C" fn (*mut c_void, BifrostStatus, *mut bifrost_frames::Frame)>,
+  user_data: *mut c_void
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  to_status_code(move || {
+    let stream : &mut bifrost_frames::AsyncStream = unsafe { &mut *in_stream };
+
+    let pop_callback = PopCallback { callback, user_data };
+
+    stream.pop(
+      Duration::from_millis(timeout_ms),
+      move |result| { pop_callback.call(result); }
+    )?;
+
+    Ok(())
+  })
+}
+
+struct WaitUntilDrainedCallback {
+  callback: extern "C" fn (*mut c_void, BifrostStatus) -> (),
+  user_data: *mut c_void,
+}
+
+impl WaitUntilDrainedCallback {
+  fn call(self, result: Result<(), bifrost_frames::Error>) {
+    match result {
+      Ok(()) => (self.callback)(self.user_data, BifrostStatus::Ok),
+      Err(error) => (self.callback)(self.user_data, error.into()),
+    }
+  }
+}
+
+unsafe impl Send for WaitUntilDrainedCallback { }
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_wait_until_drained(
+  in_stream: *mut bifrost_frames::AsyncStream,
+  timeout_ms: u64,
+  callback: Option<extern "C" fn (*mut c_void, BifrostStatus) -> ()>,
+  user_data: *mut c_void,
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  to_status_code(move || {
+    let in_stream = unsafe { &mut *in_stream };
+
+    let callback = WaitUntilDrainedCallback { callback, user_data };
+
+    in_stream.wait_until_drained(
+      Duration::from_millis(timeout_ms),
+      move |result| { callback.call(result) }
+    )?;
+    Ok(())
+  })
+}
+
+struct AllocateFrameCallback {
+  callback: extern "C" fn (*mut c_void, BifrostStatus, *mut bifrost_frames::Frame),
+  user_data: *mut c_void
+}
+
+impl AllocateFrameCallback {
+  fn call(self, result: Result<bifrost_frames::Frame, bifrost_frames::Error>) {
+    match result {
+      Ok(frame) => {
+        (self.callback)(self.user_data, BifrostStatus::Ok, Box::leak(Box::new(frame)));
+      },
+      Err(error) => {
+        (self.callback)(self.user_data, error.into(), ptr::null_mut());
+      }
+    }
+  }
+}
+
+unsafe impl Send for AllocateFrameCallback { }
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_allocate_frame(
+  in_stream: *mut bifrost_frames::AsyncStream,
+  in_frame_info: *const BifrostFrameInfo,
+  callback: Option<extern "C" fn (*mut c_void, BifrostStatus, *mut bifrost_frames::Frame)>,
+  user_data: *mut c_void
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  if in_frame_info == ptr::null() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  to_status_code(move || {
+    let stream : &mut bifrost_frames::AsyncStream = unsafe { &mut *in_stream };
+    let in_frame_info : BifrostFrameInfo = unsafe { ptr::read_unaligned(in_frame_info) };
+
+    let allocate_frame_callback = AllocateFrameCallback { callback, user_data };
+
+    let frame_info = unsafe { in_frame_info.to_frame_info()? };
+
+    stream.allocate(
+      frame_info,
+      move |result| { allocate_frame_callback.call(result); }
+    )?;
+
+    Ok(())
+  })
+}
+
+struct ReleaseFrameCallback {
+  callback: extern "C" fn (*mut c_void, BifrostStatus) -> (),
+  user_data: *mut c_void,
+}
+
+impl ReleaseFrameCallback {
+  fn call(self, status: BifrostStatus) {
+    (self.callback)(self.user_data, status);
+  }
+}
+
+unsafe impl Send for ReleaseFrameCallback { }
+
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_async_stream_release_frame(
+  in_stream: *mut bifrost_frames::AsyncStream,
+  inout_frame: *mut *mut bifrost_frames::Frame,
+  callback: Option<extern "C" fn (*mut c_void, BifrostStatus) -> ()>,
+  user_data: *mut c_void,
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  to_status_code(move || {
+    let frame = unsafe { Box::from_raw(*inout_frame) };
+    unsafe { *inout_frame = ptr::null_mut(); }
+
+    let stream : &mut bifrost_frames::AsyncStream = unsafe { &mut *in_stream };
+
+    let callback = ReleaseFrameCallback { callback, user_data };
+
+    stream.release_frame(
+      *frame,
+      move |result| {
+        match result {
+          Ok(()) => callback.call(BifrostStatus::Ok),
+          Err(error) => callback.call(error.into()),
+        }
+      }
+    )?;
+
+    Ok(())
+  })
 }
