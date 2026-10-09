@@ -17,18 +17,23 @@ use super::{
 };
 
 pub struct NameQueue<P: PlatformTrait> {
+  size: usize,
   shm: Shm<QueueInternal<P>>,
 }
 
 impl<P: PlatformTrait> NameQueue<P> {
   pub fn new(queue_name: Name, size: usize) -> Result<NameQueue<P>, Error> {
     let shm = Shm::new(queue_name, QueueInternal::new(size))?;
-    Ok(NameQueue { shm })
+    Ok(NameQueue { size, shm })
   }
 
   pub fn open(queue_name: Name) -> Result<NameQueue<P>, Error> {
-    let shm = Shm::open(queue_name)?;
-    Ok(NameQueue { shm })
+    let mut shm = Shm::<QueueInternal<P>>::open(queue_name)?;
+    let size = {
+      let lock = shm.data()?.mutable.to_lock(MUTEX_TIMEOUT)?;
+      lock.elements.len()
+    };
+    Ok(NameQueue { size, shm })
   }
 
   pub fn close(&mut self) -> Result<(), Error> {
@@ -49,6 +54,41 @@ impl<P: PlatformTrait> NameQueue<P> {
 
   pub fn try_pop(&mut self) -> Result<Option<Name>, Error> {
     self.shm.data()?.try_pop()
+  }
+
+  pub fn size(&self) -> usize {
+    self.size
+  }
+
+  pub fn migrate(
+    &mut self,
+    new_name: Name,
+    new_size: usize
+  ) -> Result<NameQueue<P>, Error> {
+    let mut shm_data = self.shm.data()?;
+
+    let mut lock = shm_data.mutable.to_lock_mut(MUTEX_TIMEOUT)?;
+
+    let new_size = self.size.max(new_size);
+
+    let mut new_queue = NameQueue::new(new_name, new_size)?;
+
+    {
+      let mut new_lock = new_queue.shm.data()?.mutable.to_lock_mut(MUTEX_TIMEOUT)?;
+
+      while let Some(name) = lock.pop() {
+        // No need to check for success here the new queue must be larger
+        // because of the min expression above.
+        new_lock.push(name);
+      }
+
+      lock.close();
+
+      shm_data.name_available.signal()?;
+      shm_data.slot_available.signal()?;
+    }
+
+    Ok(new_queue)
   }
 }
 

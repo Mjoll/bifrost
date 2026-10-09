@@ -179,6 +179,22 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
   pub fn close(&mut self) -> Result<(), Error> {
     self.name_queue.close()
   }
+
+  pub fn size(&self) -> usize {
+    self.name_queue.size()
+  }
+
+  pub fn migrate(
+    &mut self,
+    new_name: Name,
+    new_size: usize
+  ) -> Result<Queue<P, T>, Error> {
+    Ok(Queue {
+      name_queue: self.name_queue.migrate(new_name, new_size)?,
+      owner: true,
+      _marker: Default::default(),
+    })
+  }
 }
 
 impl<P: PlatformTrait, T: ShmData> Drop for Queue<P, T> {
