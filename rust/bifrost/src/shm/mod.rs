@@ -166,9 +166,7 @@ impl<T: ShmData> Shm<T> {
     self.shm.set_owner(true);
   }
 
-  // TODO: Currently this is unsafe as shared memory is just that; shared.
-  // We should not allow accessing the data without some sort of Mutex or lock.
-  pub fn data_mut<'t>(&'t mut self) -> Result<T::Mut<'t>, Error> {
+  pub fn data<'t>(&'t mut self) -> Result<T::Ref<'t>, Error> {
     let slicer = SlicerMut::new(unsafe { self.shm.as_slice_mut() });
 
     let (slicer, _header) = ShmHeader::map_mut(slicer)?;
@@ -180,8 +178,7 @@ impl<T: ShmData> Shm<T> {
     let (_slicer, data_bytes) = slicer.consume(self.data_layout)?;
     let data_slicer = SlicerMut::new(data_bytes);
     let (_slicer, data) = T::map_mut(data_slicer)?;
-
-    Ok(data)
+    Ok(T::to_immutable(data))
   }
 }
 

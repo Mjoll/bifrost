@@ -16,6 +16,19 @@ use super::{
   PlatformTrait
 };
 
+pub struct Lock<'m: 'l, 'l, P: PlatformTrait, T: MemoryMappable> {
+  #[allow(dead_code)] // Lock unlocks on drop
+  lock: <P::Mutex<'m> as MutexTrait<'m>>::Lock<'l>,
+  data: T::Ref<'l>,
+}
+
+impl<'m, 'l, T: MemoryMappable, P: PlatformTrait> Deref for Lock<'m, 'l, P, T> {
+  type Target = T::Ref<'l>;
+  fn deref(&self) -> &Self::Target {
+    &self.data
+  }
+}
+
 pub struct LockMut<'m: 'l, 'l, P: PlatformTrait, T: MemoryMappable> {
   #[allow(dead_code)] // Lock unlocks on drop
   lock: <P::Mutex<'m> as MutexTrait<'m>>::LockMut<'l>,
@@ -52,6 +65,14 @@ pub struct MutexMut<'m, P: PlatformTrait, T: MemoryMappable> {
 }
 
 impl<'m, T: MemoryMappable, P: PlatformTrait> MutexMut<'m, P, T> {
+  pub fn lock<'l>(&'l mut self, timeout: Duration) -> Result<Lock<'m, 'l, P, T>, Error> {
+    let lock = Lock {
+      lock: self.mutex.lock(timeout)?,
+      data: T::to_immutable(T::reborrow_mut(&mut self.data)),
+    };
+    Ok(lock)
+  }
+
   pub fn lock_mut<'l>(&'l mut self, timeout: Duration) -> Result<LockMut<'m, 'l, P, T>, Error> {
     let lock = LockMut {
       lock: self.mutex.lock_mut(timeout)?,
@@ -62,6 +83,7 @@ impl<'m, T: MemoryMappable, P: PlatformTrait> MutexMut<'m, P, T> {
 }
 
 impl<T: MemoryMappable, P: PlatformTrait> MemoryMappable for Mutex<P, T> {
+  type Ref<'t> = MutexMut<'t, P, T>;
   type Mut<'t> = MutexMut<'t, P, T>;
 
   fn memory_layout(&self) -> MemoryLayout {
@@ -83,5 +105,14 @@ impl<T: MemoryMappable, P: PlatformTrait> MemoryMappable for Mutex<P, T> {
     let mutex = MutexMut { mutex, data };
 
     Ok((slicer, mutex))
+  }
+
+  fn to_immutable<'t>(mutable: Self::Mut<'t>) -> Self::Ref<'t> { mutable }
+
+  fn reborrow_mut<'b, 'm>(mutable: &'b mut Self::Mut<'m>) -> Self::Mut<'b> {
+    MutexMut {
+      mutex: P::reborrow_mutex_mut(&mut mutable.mutex),
+      data: T::reborrow_mut(&mut mutable.data),
+    }
   }
 }

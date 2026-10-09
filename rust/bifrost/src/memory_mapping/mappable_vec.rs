@@ -18,6 +18,7 @@ impl<T: Pod> From<Vec<T>> for MappableVec<T> {
 }
 
 impl<T: Pod> MemoryMappable for MappableVec<T> {
+  type Ref<'t> = &'t [T];
   type Mut<'t> = &'t mut [T];
 
   fn memory_layout(&self) -> MemoryLayout {
@@ -46,5 +47,9 @@ impl<T: Pod> MemoryMappable for MappableVec<T> {
     let (slicer, mapped) = slicer.map_slice_mut(size)?;
     Ok((slicer, mapped))
   }
+
+  fn to_immutable<'t>(mutable: Self::Mut<'t>) -> Self::Ref<'t> { mutable }
+
+  fn reborrow_mut<'b, 'm>(mutable: &'b mut Self::Mut<'m>) -> Self::Mut<'b> { *mutable }
 }
 

@@ -23,6 +23,10 @@ pub struct LinuxMutex<'m> {
   pthread_mutex: &'m mut libc::pthread_mutex_t,
 }
 
+pub struct LinuxLock<'l, 'm> {
+  mutex: &'l mut LinuxMutex<'m>,
+}
+
 fn system_time_to_timespec(system_time: SystemTime) -> Result<libc::timespec, Error> {
   let from_epoch = system_time.duration_since(UNIX_EPOCH)?;
 
@@ -51,6 +55,26 @@ fn pthread_mutex_lock_helper(
         Err(Error::Timeout)
       },
       _ => Err(Error::FailedToLockMutex)
+    }
+  }
+}
+
+impl<'l, 'm> LinuxLock<'l, 'm> {
+  fn new(
+    mutex: &'l mut LinuxMutex<'m>,
+    duration: Duration,
+  ) -> Result<LinuxLock<'l, 'm>, Error> {
+    pthread_mutex_lock_helper(mutex.pthread_mutex, duration)?;
+    Ok(LinuxLock { mutex })
+  }
+}
+
+impl<'l, 'm> Drop for LinuxLock<'l, 'm> {
+  fn drop(&mut self) {
+    unsafe {
+      if libc::pthread_mutex_unlock(self.mutex.pthread_mutex) != 0 {
+        eprintln!("Bifrost: Failed to unlock pthread mutex");
+      }
     }
   }
 }
@@ -139,6 +163,7 @@ impl<'l, 'm> Drop for LinuxLockMut<'l, 'm> {
 }
 
 impl<'m> MutexTrait<'m> for LinuxMutex<'m> {
+  type Lock<'l> = LinuxLock<'l, 'm> where Self: 'l;
   type LockMut<'l> = LinuxLockMut<'l, 'm> where Self: 'l;
   fn memory_layout() -> MemoryLayout {
     pthread_mutex_memory_layout()
@@ -168,6 +193,9 @@ impl<'m> MutexTrait<'m> for LinuxMutex<'m> {
     Ok((slicer, mutex))
   }
 
+  fn lock<'l>(&'l mut self, timeout: Duration) -> Result<Self::Lock<'l>, Error> {
+    LinuxLock::new(self, timeout)
+  }
   fn lock_mut<'l>(&'l mut self, timeout: Duration) -> Result<Self::LockMut<'l>, Error> {
     LinuxLockMut::new(self, timeout)
   }
@@ -184,4 +212,8 @@ pub struct LinuxPlatform;
 
 impl PlatformTrait for LinuxPlatform {
   type Mutex<'m> = LinuxMutex<'m>;
+
+  fn reborrow_mutex_mut<'b, 'm>(mutex: &'b mut Self::Mutex<'m>) -> Self::Mutex<'b> {
+    LinuxMutex { pthread_mutex: mutex.pthread_mutex }
+  }
 }

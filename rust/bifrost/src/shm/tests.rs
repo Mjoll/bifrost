@@ -1,6 +1,8 @@
-use bytemuck::{
-  Pod,
-  Zeroable,
+use std::time::Duration;
+
+use crate::{
+  Mutex,
+  Platform,
 };
 
 use super::{
@@ -14,10 +16,9 @@ use super::{
 
 #[test]
 fn simple_shm_test() {
-  #[derive(Copy, Clone, Pod, Zeroable)]
-  #[repr(C)]
+  #[derive(MemoryMappable)]
   struct Payload {
-    value: u32
+    value: Mutex<Platform, u32>
   }
 
   impl ShmData for Payload {
@@ -40,18 +41,32 @@ fn simple_shm_test() {
     }
   }
 
-  let payload = Payload { value: 2 };
+  let payload = Payload { value: Mutex::new(2) };
 
   let mut shm1 : Shm<Payload> = Shm::new(shm_name, payload).unwrap();
 
-  assert_eq!(shm1.data_mut().unwrap().value, 2);
+  let timeout = Duration::from_secs(5);
+  {
+    let mut payload = shm1.data().unwrap();
+    let lock = payload.value.lock(timeout).unwrap();
+    assert_eq!(**lock, 2);
+  }
 
   let mut shm2 : Shm<Payload> = Shm::open(shm_name).unwrap();
 
-  shm1.data_mut().unwrap().value = 67;
+  {
+    let mut payload = shm1.data().unwrap();
+    let mut lock = payload.value.lock_mut(timeout).unwrap();
+    **lock = 67;
+  }
 
-  assert_eq!(shm2.data_mut().unwrap().value, 67);
+  {
+    let mut payload = shm2.data().unwrap();
+    let lock = payload.value.lock(timeout).unwrap();
+    assert_eq!(**lock, 67);
+  }
 
+  let payload = Payload { value: Mutex::new(2) };
   match Shm::new(shm_name, payload) {
     Ok(_) => {
       panic!("Expected new to fail when memory already exists");
@@ -94,16 +109,16 @@ fn simple_shm_test_2() {
     let mut shm : Shm<Payload> = Shm::new(shm_name, init).unwrap();
 
     {
-      let payload_ref = shm.data_mut().unwrap();
-      assert_eq!(*(payload_ref.two), 2);
-      assert_eq!(*(payload_ref.one), 1);
+      let payload = shm.data().unwrap();
+      assert_eq!(*(payload.two), 2);
+      assert_eq!(*(payload.one), 1);
     }
 
     {
       let mut shm2 : Shm<Payload> = Shm::open(shm_name).unwrap();
-      let payload_ref = shm2.data_mut().unwrap();
-      assert_eq!(*(payload_ref.two), 2);
-      assert_eq!(*(payload_ref.one), 1);
+      let payload = shm2.data().unwrap();
+      assert_eq!(*(payload.two), 2);
+      assert_eq!(*(payload.one), 1);
     }
   }
 

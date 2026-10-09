@@ -45,6 +45,13 @@ fn derive_from_fields(
   let (impl_generics, ty_generics, _where_clause) = struct_generics.split_for_impl();
   let (ref_impl_generics, ref_ty_generics, _where_clause) = ref_generics.split_for_impl();
 
+  let ref_struct_name = format_ident!("{}Ref", struct_name);
+  let ref_field_values = fields.named.iter().map(|field| {
+    let name = &field.ident;
+    let ty = &field.ty;
+    quote!(pub #name: <#ty as #bifrost_path :: MemoryMappable>::Ref<'t>)
+  });
+
   let mut_struct_name = format_ident!("{}Mut", struct_name);
   let mut_field_values = fields.named.iter().map(|field| {
     let name = &field.ident;
@@ -73,13 +80,30 @@ fn derive_from_fields(
     quote!(#name,)
   });
 
+  let to_immutable_body = fields.named.iter().map(|field| {
+    let name = &field.ident;
+    let ty = &field.ty;
+    quote!(#name: <#ty as #bifrost_path :: MemoryMappable>::to_immutable(mutable.#name),)
+  });
+
+  let reborrow_mut_body = fields.named.iter().map(|field| {
+    let name = &field.ident;
+    let ty = &field.ty;
+    quote!(#name: <#ty as #bifrost_path :: MemoryMappable>::reborrow_mut(&mut mutable.#name),)
+  });
+
   let syn_output =
     quote!(
+      pub struct #ref_struct_name #ref_impl_generics {
+        #(#ref_field_values,)*
+      }
+
       pub struct #mut_struct_name #ref_impl_generics {
         #(#mut_field_values,)*
       }
 
       impl #impl_generics #bifrost_path :: MemoryMappable for #struct_name #ty_generics {
+        type Ref<'t> = #ref_struct_name #ref_ty_generics;
         type Mut<'t> = #mut_struct_name #ref_ty_generics;
 
         fn memory_layout(&self) -> #bifrost_path :: MemoryLayout {
@@ -98,6 +122,18 @@ fn derive_from_fields(
             #(#map_mut_body_build_struct)*
           };
           Ok((slicer, mutable))
+        }
+
+        fn to_immutable<'t>(mutable: Self::Mut<'t>) -> Self::Ref<'t> {
+          #ref_struct_name {
+            #(#to_immutable_body)*
+          }
+        }
+
+        fn reborrow_mut<'b, 'm>(mutable: &'b mut Self::Mut<'m>) -> Self::Mut<'b> {
+          #mut_struct_name {
+            #(#reborrow_mut_body)*
+          }
         }
       }
     );
