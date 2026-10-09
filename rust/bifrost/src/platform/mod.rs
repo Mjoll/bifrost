@@ -40,7 +40,11 @@ pub trait MutexTrait<'m> : Sized {
 pub trait EventTrait<'e> : Sized {
   fn signal(&mut self) -> Result<(), Error>;
   fn clear(&mut self) -> Result<(), Error>;
-  fn wait(&mut self, duration: Duration) -> Result<(), Error>;
+  fn wait(
+    &mut self,
+    duration: Duration,
+    interrupt: Option<&dyn Fn() -> bool>,
+  ) -> Result<(), Error>;
   fn memory_layout() -> MemoryLayout;
   fn initialize<'t>(slicer: SlicerMut<'t>) -> Result<SlicerMut<'t>, Error>;
   fn from_existing_mut(slicer: SlicerMut<'e>) -> Result<(SlicerMut<'e>, Self), Error>;

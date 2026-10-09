@@ -65,11 +65,23 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     Ok(queue)
   }
 
+  pub fn register_interrupt_callback<F: FnMut() -> bool + Send + 'static>(
+    &mut self,
+    callback: F,
+    interval: Duration,
+  ) {
+    self.name_queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn clear_interrupt_callback(&mut self) {
+    self.name_queue.clear_interrupt_callback();
+  }
+
   pub fn push(
     &mut self,
     in_shm: &mut Option<Shm<T>>,
     timeout: Duration,
-    cache: Option<&mut LocalCache<T>>
+    cache: Option<&mut LocalCache<T>>,
   ) -> Result<(), Error> {
     let Some(mut shm) = in_shm.take() else {
       return Ok(())
@@ -192,7 +204,10 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     })
   }
 
-  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+  pub fn wait_until_drained(
+    &mut self,
+    timeout: Duration,
+  ) -> Result<(), Error> {
     self.name_queue.wait_until_drained(timeout)
   }
 

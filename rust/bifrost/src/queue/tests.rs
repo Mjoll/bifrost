@@ -259,3 +259,107 @@ fn multiprocess_queue_test() {
     &cache,
   );
 }
+
+#[test]
+fn interrupt_test() {
+  let queue_name = Name::new("bifrost-test-queue-4").unwrap();
+
+  let timeout = Duration::from_secs(5);
+  let interval = Duration::from_millis(1);
+  let mut queue : Queue<Platform, Payload> = Queue::new(queue_name, 1).unwrap();
+
+  use std::sync::{
+    Arc,
+    Mutex as ThreadMutex,
+  };
+
+  // Check that an already fired interrupt immediately triggers interrupt
+  // for the next blocking operation
+  {
+    let interrupted = Arc::new(ThreadMutex::new(false));
+    let interrupted_clone = interrupted.clone();
+    *interrupted.lock().unwrap() = true;
+
+    // Make sure the interrupt callback has been checked.
+    thread::sleep(Duration::from_millis(100));
+
+    queue.register_interrupt_callback(
+      move || *interrupted_clone.lock().unwrap(),
+      interval,
+    );
+
+    expect_interrupted(queue.pop(timeout, None));
+  }
+
+  // Check ongoing operation is interrupted. Make sure the other process it not
+  // interrupted
+  {
+    let interrupted = Arc::new(ThreadMutex::new(false));
+    let interrupted_clone = interrupted.clone();
+
+    let join_handle1 = thread::spawn(move || -> Result<(), Error> {
+      let mut queue : Queue<Platform, Payload> = Queue::open(queue_name).unwrap();
+      queue.register_interrupt_callback(
+        move || *interrupted_clone.lock().unwrap(),
+        interval,
+      );
+      queue.pop(timeout, None)?;
+      Ok(())
+    });
+
+    let join_handle2 = thread::spawn(move || -> Result<(), Error> {
+      let mut queue : Queue<Platform, Payload> = Queue::open(queue_name).unwrap();
+      queue.register_interrupt_callback(
+        move || false,
+        interval,
+      );
+      queue.pop(timeout, None)?;
+      Ok(())
+    });
+
+    let join_handle3 = thread::spawn(move || -> Result<(), Error> {
+      let mut queue : Queue<Platform, Payload> = Queue::open(queue_name).unwrap();
+      queue.pop(timeout, None)?;
+      Ok(())
+    });
+
+    // Ensure thread is blocking
+    thread::sleep(Duration::from_secs(1));
+
+    *interrupted.lock().unwrap() = true;
+
+    // Make sure the interrupt callback has been checked.
+    thread::sleep(Duration::from_millis(100));
+
+    expect_interrupted(join_handle1.join().unwrap());
+    expect_timeout(join_handle2.join().unwrap());
+
+    // Thread 3 doesn't even have a registered interrupt callback so should
+    // never be interrupted
+    expect_timeout(join_handle3.join().unwrap());
+  }
+}
+
+fn expect_interrupted<T>(result: Result<T, Error>) {
+  match result {
+    Err(Error::Interrupted) => { },
+    Ok(_) => {
+      panic!("Expected to fail with Interrupted error");
+    },
+    Err(error) => {
+      panic!("Expected pop to fail with Interrupted error, but got {:?}", error);
+    }
+  }
+}
+
+fn expect_timeout<T>(result: Result<T, Error>) {
+  match result {
+    Err(Error::Timeout) => { },
+    Ok(_) => {
+      panic!("Expected to fail with Timeout error");
+    },
+    Err(error) => {
+      panic!("Expected pop to fail with Timeout error, but got {:?}", error);
+    }
+  }
+}

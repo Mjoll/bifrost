@@ -35,6 +35,7 @@ pub enum Error {
   QueueClosed,
   NameTooLong,
   Utf8Error,
+  Interrupted,
 }
 
 impl From<shared_memory::ShmemError> for Error {
