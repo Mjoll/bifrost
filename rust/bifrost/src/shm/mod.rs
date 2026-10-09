@@ -1,26 +1,41 @@
-use super::Error;
+use std::marker::PhantomData;
 
-pub struct Shm {
+use super::{
+  Error,
+  MemoryMappable,
+  SlicerMut,
+};
+
+pub struct Shm<T: MemoryMappable> {
   shm: shared_memory::Shmem,
   name: String,
+  _marker: PhantomData<T>,
 }
 
-impl Shm {
-  pub fn new(name: &str, size: usize) -> Result<Shm, Error> {
-    let shm = shared_memory::ShmemConf::new()
+impl<T: MemoryMappable> Shm<T> {
+  pub fn new(name: &str, data: T) -> Result<Shm<T>, Error> {
+    let memory_layout = data.memory_layout();
+
+    let mut shm = shared_memory::ShmemConf::new()
       .os_id(name)
-      .size(size)
+      .size(memory_layout.size)
       .create()?;
 
-    Ok(Shm { shm, name: name.to_string() })
+    {
+      let data_mut = unsafe { shm.as_slice_mut() };
+      let slicer = SlicerMut::new(data_mut);
+      data.initialize(slicer)?;
+    }
+
+    Ok(Shm { shm, name: name.to_string(), _marker: Default::default() })
   }
 
-  pub fn open(name: &str) -> Result<Shm, Error> {
+  pub fn open(name: &str) -> Result<Shm<T>, Error> {
     let shm = shared_memory::ShmemConf::new()
       .os_id(name)
       .open()?;
 
-    Ok(Shm { shm, name: name.to_string() })
+    Ok(Shm { shm, name: name.to_string(), _marker: Default::default() })
   }
 
   pub fn name(&self) -> &str {
@@ -38,8 +53,11 @@ impl Shm {
 
   // TODO: Currently this is unsafe as shared memory is just that; shared.
   // We should not allow accessing the data without some sort of Mutex or lock.
-  pub fn data_mut(&mut self) -> &mut [u8] {
-    unsafe { self.shm.as_slice_mut() }
+  pub fn data_mut(&mut self) -> Result<T::Mut<'_>, Error> {
+    let data_mut = unsafe { self.shm.as_slice_mut() };
+    let slicer = SlicerMut::new(data_mut);
+    let (_slicer, mapped) = T::map_mut(slicer)?;
+    Ok(mapped)
   }
 }
 
