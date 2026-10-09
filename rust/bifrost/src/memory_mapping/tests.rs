@@ -3,9 +3,9 @@ use bytemuck::{
   Zeroable,
 };
 
+use crate::derive::*;
+
 use super::{
-  Error,
-  MemoryLayout,
   MemoryMappable,
   SlicerMut,
 };
@@ -20,48 +20,12 @@ struct PodData {
   four: u64,
 }
 
+#[derive(MemoryMappable)]
 struct NonPodData {
   one: u32,
   two: u64,
   pod: PodData,
 }
-
-#[derive(Debug)]
-struct NonPodDataMut<'t> {
-  one: &'t mut u32,
-  two: &'t mut u64,
-  pod: &'t mut PodData,
-}
-
-impl MemoryMappable for NonPodData {
-  type Mut<'t> = NonPodDataMut<'t>;
-
-  fn memory_layout(&self) -> MemoryLayout {
-    MemoryLayout::new()
-      .with::<u32>()
-      .with::<u64>()
-      .with::<PodData>()
-  }
-
-  fn initialize<'t>(
-    &self,
-    slicer: SlicerMut<'t>
-  ) -> Result<SlicerMut<'t>, Error> {
-    let slicer = self.one.initialize(slicer)?;
-    let slicer = self.two.initialize(slicer)?;
-    let slicer = self.pod.initialize(slicer)?;
-    Ok(slicer)
-  }
-
-  fn map_mut<'t>(slicer: SlicerMut<'t>) -> Result<(SlicerMut<'t>, Self::Mut<'t>), Error> {
-    let (slicer, one) = u32::map_mut(slicer)?;
-    let (slicer, two) = u64::map_mut(slicer)?;
-    let (slicer, pod) = PodData::map_mut(slicer)?;
-    let mutable = NonPodDataMut { one, two, pod };
-    Ok((slicer, mutable))
-  }
-}
-
 
 #[test]
 fn test_memory_mapping_1() {
@@ -89,8 +53,6 @@ fn test_memory_mapping_1() {
   {
     let slicer_mut = SlicerMut::new(aligned_data);
     let (_slicer, mapped_bar) = NonPodData::map_mut(slicer_mut).unwrap();
-
-    println!("Bar = {:?}", mapped_bar);
 
     assert_eq!(*mapped_bar.one, 42);
     assert_eq!(*mapped_bar.two, 69);
