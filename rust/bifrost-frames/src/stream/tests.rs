@@ -113,6 +113,8 @@ fn test_stream_2_pool_migration() {
     for frame in held_frames.drain(..) {
       stream.release_frame(frame)?;
     }
+    let stats = stream.stats()?;
+    println!("Child thread: {stats:?}");
     Ok(frames)
   }
 
@@ -160,7 +162,7 @@ fn test_stream_2_pool_migration() {
     thread_function(stream_name)
   });
 
-  let count = 100;
+  let count = 1000;
 
   let main_result = function_main_loop(count, &mut stream);
 
@@ -189,4 +191,14 @@ fn test_stream_2_pool_migration() {
   for (expected, frame_number) in result.into_iter().enumerate() {
     assert_eq!(expected, frame_number as usize);
   }
+
+  let stats = stream.stats().unwrap();
+
+  assert!(stats.frames_allocated < 30);
+  assert!(stats.queue_migrations < 3);
+  // We should never map the same frame twice, so we should never map more
+  // frames than have been allocated
+  assert!(stats.frames_mapped <= stats.frames_allocated);
+
+  println!("Main thread: {stats:?}");
 }

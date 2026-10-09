@@ -11,6 +11,8 @@ use super::{
   ShmFrame,
 };
 
+pub use bifrost::CacheStats as FrameCacheStats;
+
 pub struct FrameCache {
   cache: bifrost::LocalCache<ShmFrame>,
 }
@@ -18,6 +20,10 @@ pub struct FrameCache {
 impl FrameCache {
   pub fn new() -> FrameCache {
     FrameCache { cache: bifrost::LocalCache::new() }
+  }
+
+  pub fn stats(&self) -> FrameCacheStats {
+    self.cache.stats()
   }
 }
 

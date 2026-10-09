@@ -24,6 +24,12 @@ pub struct Stream {
   stream: bifrost::Shm<StreamShm>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct StreamStats {
+  pub frames_mapped: usize,
+  pub frames_allocated: usize,
+  pub queue_migrations: usize,
+}
 
 impl Stream {
   pub fn new(
@@ -102,6 +108,15 @@ impl Stream {
     };
 
     Ok(stream)
+  }
+
+  pub fn stats(&mut self) -> Result<StreamStats, Error> {
+    let lock = self.stream.data()?.mutable.to_lock(TIMEOUT)?;
+    Ok(StreamStats {
+      frames_allocated: lock.frame_id_counter as usize,
+      frames_mapped: self.cache.stats().cache_misses,
+      queue_migrations: lock.return_queue_generation_id as usize,
+    })
   }
 
   pub fn allocate(&mut self, frame_info: FrameInfo) -> Result<Frame, Error> {
