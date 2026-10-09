@@ -40,6 +40,9 @@ typedef struct BifrostFrameST* BifrostFrame;
 struct BifrostFrameLockST;
 typedef struct BifrostFrameLockST* BifrostFrameLock;
 
+struct BifrostAsyncStreamST;
+typedef struct BifrostAsyncStreamST* BifrostAsyncStream;
+
 struct BifrostFraction {
   uint32_t numerator;
   uint32_t denominator;
@@ -247,6 +250,64 @@ struct BifrostAudioBuffer {
 enum BifrostStatus bifrost_frame_lock_query_audio_buffer(
   BifrostFrameLock in_lock,
   struct BifrostAudioBuffer* mut_buffer
+);
+
+enum BifrostStatus bifrost_async_stream_create(
+  const char* name,
+  size_t queue_size,
+  size_t pool_size,
+  BifrostAsyncStream* out_stream
+);
+
+enum BifrostStatus bifrost_async_stream_open(
+  const char* name,
+  BifrostAsyncStream* out_stream
+);
+
+enum BifrostStatus bifrost_async_stream_destroy(
+  BifrostAsyncStream* inout_stream
+);
+
+enum BifrostStatus bifrost_async_stream_push(
+  BifrostAsyncStream in_stream,
+  uint64_t timeout_ms,
+  BifrostFrame* inout_frame,
+  void (*callback)(void* user_data, enum BifrostStatus status),
+  void* user_data
+);
+
+enum BifrostStatus bifrost_async_stream_pop(
+  BifrostAsyncStream in_stream,
+  uint64_t timeout_ms,
+  void (*callback)(void* user_data, enum BifrostStatus status, BifrostFrame frame),
+  void* user_data
+);
+
+enum BifrostStatus bifrost_async_stream_wait_until_drained(
+  BifrostAsyncStream in_stream,
+  uint64_t timeout_ms,
+  void (*callback)(void* user_data, enum BifrostStatus status),
+  void* user_data
+);
+
+enum BifrostStatus bifrost_async_stream_allocate_frame(
+  BifrostAsyncStream in_stream,
+  const struct BifrostFrameInfo* in_frame_info,
+  void (*callback)(void* user_data, enum BifrostStatus status, BifrostFrame frame),
+  void* user_data
+);
+
+/**
+ *  Release the frame by putting it on the return queue of the provided async
+ *  stream. Note that unlike the bifrost_frame_release method it is not valid
+ *  to provide in_stream as NULL. If no stream is available use
+ *  bifrost_frame_release with in_stream set to NULL to clean up the frame.
+ */
+enum BifrostStatus bifrost_async_stream_release_frame(
+  BifrostAsyncStream in_stream,
+  BifrostFrame* inout_frame,
+  void (*callback)(void* user_data, enum BifrostStatus status),
+  void* user_data
 );
 
 
