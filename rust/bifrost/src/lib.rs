@@ -38,3 +38,8 @@ pub use shm::{
 
 mod name_queue;
 pub use name_queue::NameQueue;
+
+mod queue;
+pub use queue::{
+  Queue,
+};
