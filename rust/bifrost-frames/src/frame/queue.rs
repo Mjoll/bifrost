@@ -138,6 +138,10 @@ impl FrameQueue {
     self.queue.size()
   }
 
+  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+    Ok(self.queue.wait_until_drained(timeout)?)
+  }
+
   pub fn migrate(
     &mut self,
     new_name: Name,

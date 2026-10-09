@@ -294,6 +294,10 @@ impl Stream {
     }
   }
 
+  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+    self.queue.wait_until_drained(timeout)
+  }
+
   fn clean_up(&mut self) -> Result<(), Error> {
     if self.stream.is_owner() {
       self.close()?;

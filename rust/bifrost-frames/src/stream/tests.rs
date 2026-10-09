@@ -247,3 +247,79 @@ fn test_stream_3_return_queue_ownership() {
     let _ = Stream::open(stream_name).unwrap();
   }
 }
+
+#[test]
+fn test_stream_4_wait_for_drained() {
+  let stream_name = "bifrost-frames-test-stream-4";
+
+  let mut stream = Stream::new(stream_name, 5, 10).unwrap();
+
+  fn thread_function(stream_name: &str) -> Result<Vec<u64>, Error> {
+    let mut stream = Stream::open(stream_name)?;
+    let timeout = Duration::from_secs(5);
+    let mut frames = Vec::new();
+    while let Some(mut frame) = stream.pop(timeout)? {
+      // Add some back pressure from the thread so we are sure the queue
+      // remains full.
+      thread::sleep(Duration::from_millis(10));
+      {
+        let lock = frame.lock(timeout)?;
+        frames.push(lock.frame_number());
+      }
+      stream.release_frame(frame).unwrap();
+    }
+    Ok(frames)
+  }
+
+  let frame_info = FrameInfo {
+    frame_rate: Fraction {
+      numerator: 25,
+      denominator: 1,
+    },
+    video: Some(VideoInfo {
+      resolution: Resolution {
+        width: 1920,
+        height: 1080,
+        pixel_aspect_ratio: Fraction::one(),
+      },
+      pixel_format: PixelFormat::RGBA8,
+      field_order: FieldOrder::Progressive,
+    }),
+    audio: Some(AudioInfo {
+      sample_rate: 48000,
+      channel_count: 2,
+      format: crate::AudioFormat::S16,
+    }),
+  };
+
+  let join_handle = thread::spawn(move || {
+    thread_function(stream_name).unwrap()
+  });
+
+  let duration = Duration::from_secs(5);
+  let count = 100;
+  for frame_number in 0..count {
+    let mut frame = stream.allocate(frame_info).unwrap();
+    {
+      let mut lock = frame.lock_mut(duration).unwrap();
+      lock.set_frame_number(frame_number);
+    }
+
+    stream.push(&mut Some(frame), duration).unwrap();
+  }
+
+  stream.close().unwrap();
+
+  stream.wait_until_drained(Duration::from_secs(5)).unwrap();
+
+  // This drains the queue and would cause the child thread to miss the last
+  // frames if the line above did not block until the queue was drained.
+  drop(stream);
+
+  let result = join_handle.join().unwrap();
+
+  assert_eq!(result.len(), count as usize);
+  for (expected, frame_number) in result.into_iter().enumerate() {
+    assert_eq!(expected, frame_number as usize);
+  }
+}

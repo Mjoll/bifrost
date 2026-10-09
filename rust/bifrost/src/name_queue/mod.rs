@@ -188,6 +188,9 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
           if was_full {
             self.slot_available.signal()?;
           }
+          if lock.empty() {
+            self.drained.signal()?;
+          }
           return Ok(Some(name));
         }
 
