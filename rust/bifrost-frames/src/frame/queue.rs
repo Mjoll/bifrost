@@ -146,5 +146,18 @@ impl FrameQueue {
     let queue = self.queue.migrate(new_name, new_size)?;
     Ok(FrameQueue { queue })
   }
+
+  pub fn is_owner(&self) -> bool {
+    self.queue.is_owner()
+  }
+
+  pub(crate) fn release_ownership(&mut self) {
+    self.queue.release_ownership();
+  }
+
+
+  pub(crate) fn acquire_ownership(&mut self) {
+    self.queue.acquire_ownership();
+  }
 }
 

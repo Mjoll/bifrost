@@ -90,6 +90,18 @@ impl<P: PlatformTrait> NameQueue<P> {
 
     Ok(new_queue)
   }
+
+  pub fn is_owner(&self) -> bool {
+    self.shm.is_owner()
+  }
+
+  pub fn release_ownership(&mut self) {
+    self.shm.release_ownership();
+  }
+
+  pub fn acquire_ownership(&mut self) {
+    self.shm.acquire_ownership();
+  }
 }
 
 

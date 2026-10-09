@@ -204,7 +204,6 @@ fn test_stream_2_pool_migration() {
 }
 
 #[test]
-#[ignore = "Currently migration transfer return queue ownership to the process doing the migration"]
 fn test_stream_3_return_queue_ownership() {
   let stream_name = "bifrost-frames-test-stream-3";
 

@@ -199,15 +199,16 @@ impl<T: ShmData> Shm<T> {
     self.name
   }
 
-  // These are only supposed to be used my the Named queue to relinquish and
-  // acquire owner ship to/from the NameQueue
+  pub fn is_owner(&self) -> bool {
+    self.shm.is_owner()
+  }
 
-  pub(crate) fn release_ownership(&mut self) {
+  pub fn release_ownership(&mut self) {
     self.shm.set_owner(false);
   }
 
 
-  pub(crate) fn acquire_ownership(&mut self) {
+  pub fn acquire_ownership(&mut self) {
     self.shm.set_owner(true);
   }
 

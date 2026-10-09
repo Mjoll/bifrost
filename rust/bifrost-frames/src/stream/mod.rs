@@ -47,7 +47,14 @@ impl Stream {
 
     let cache = FrameCache::new();
     let queue = FrameQueue::new(queue_name, queue_size)?;
-    let return_queue = FrameQueue::new(return_queue_name, pool_size)?;
+    let mut return_queue = FrameQueue::new(return_queue_name, pool_size)?;
+
+    // The return queue is not owned by the FrameQueue object, but rather by
+    // the stream Shm. This is because the return queue may be migrated by
+    // any process. In the Drop for the Stream the owner of the stream will
+    // temporarily acquire ownership of the latest return queue in order
+    // to destroy it.
+    return_queue.release_ownership();
 
     let stream_shm = StreamShm {
       mutable: bifrost::Mutex::new(StreamShmMutable {
@@ -233,14 +240,22 @@ impl Stream {
 
     let new_queue_size = self.return_queue.size() * 2;
 
-    let new_queue =
+    let mut new_queue =
       self.return_queue.migrate(
         new_return_queue_name,
         new_queue_size,
       )?;
 
+    new_queue.release_ownership();
+
     lock.return_queue_generation_id = return_queue_generation_id;
     self.return_queue_generation_id = return_queue_generation_id;
+
+    // Take ownership of the current queue so that it is destroyed. If a
+    // process which is not the stream owner migrates the queue it also
+    // has to be the one that destroys it.
+    self.return_queue.acquire_ownership();
+
     self.return_queue = new_queue;
     Ok(())
   }
@@ -276,6 +291,27 @@ impl Stream {
           return Err(error.into());
         }
       }
+    }
+  }
+
+  fn clean_up(&mut self) -> Result<(), Error> {
+    if self.stream.is_owner() {
+      self.close()?;
+
+      // Make sure the stream owner migrates to the most recent queue and takes
+      // ownership over it so that everything is cleaned up.
+      while self.try_update_return_queue()? { }
+
+      self.return_queue.acquire_ownership();
+    }
+    Ok(())
+  }
+}
+
+impl Drop for Stream {
+  fn drop(&mut self) {
+    if self.clean_up().is_err() {
+      eprintln!("bifrost-frames: Failed to clean up Stream");
     }
   }
 }

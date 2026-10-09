@@ -43,7 +43,6 @@ pub struct CacheStats {
 
 pub struct Queue<P: PlatformTrait, T: ShmData> {
   name_queue: NameQueue<P>,
-  owner: bool,
   _marker: PhantomData<T>,
 }
 
@@ -51,7 +50,6 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
   pub fn new(queue_name: Name, size: usize) -> Result<Queue<P, T>, Error> {
     let queue = Queue {
       name_queue: NameQueue::new(queue_name, size)?,
-      owner: true,
       _marker: Default::default(),
     };
 
@@ -61,7 +59,6 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
   pub fn open(queue_name: Name) -> Result<Queue<P, T>, Error> {
     let queue = Queue {
       name_queue: NameQueue::open(queue_name)?,
-      owner: false,
       _marker: Default::default(),
     };
 
@@ -191,15 +188,26 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
   ) -> Result<Queue<P, T>, Error> {
     Ok(Queue {
       name_queue: self.name_queue.migrate(new_name, new_size)?,
-      owner: true,
       _marker: Default::default(),
     })
+  }
+
+  pub fn is_owner(&self) -> bool {
+    self.name_queue.is_owner()
+  }
+
+  pub fn release_ownership(&mut self) {
+    self.name_queue.release_ownership();
+  }
+
+  pub fn acquire_ownership(&mut self) {
+    self.name_queue.acquire_ownership();
   }
 }
 
 impl<P: PlatformTrait, T: ShmData> Drop for Queue<P, T> {
   fn drop(&mut self) {
-    if !self.owner {
+    if !self.name_queue.is_owner() {
       return;
     }
     if self.name_queue.close().is_err() {
