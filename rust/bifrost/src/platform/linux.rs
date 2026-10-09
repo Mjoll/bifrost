@@ -17,6 +17,7 @@ use super::{
   Error,
   EventTrait,
   MutexTrait,
+  Name,
   PlatformTrait,
 };
 
@@ -470,4 +471,125 @@ impl PlatformTrait for LinuxPlatform {
       signaled: event.signaled,
     }
   }
+
+  fn list_abandoned_shm_names(prefix: &str) -> Vec<Name> {
+    use std::collections::HashMap;
+    let mut candidates : HashMap<String, Name> = HashMap::new();
+    use std::{
+      fs,
+      path::PathBuf,
+    };
+    let mut shm_dir = PathBuf::new();
+    shm_dir.push("/dev");
+    shm_dir.push("shm");
+
+    let Ok(shm_entries) = fs::read_dir(shm_dir) else {
+      return Vec::new();
+    };
+
+    for entry in shm_entries {
+      let Ok(entry) = entry else { continue };
+      let Ok(metadata) = entry.metadata() else { continue; };
+      if !metadata.is_file() {
+        continue;
+      }
+      if let Some(file_name) = entry.file_name().to_str() {
+        if file_name.starts_with(prefix) {
+          if let Some(path_str) = entry.path().to_str() {
+            if let Ok(name) = Name::new(file_name) {
+              candidates.insert(path_str.to_owned(), name);
+            }
+          }
+        }
+      }
+    }
+
+    let Ok(proc_entries) = fs::read_dir("/proc") else {
+      return Vec::new();
+    };
+
+    for proc_entry in proc_entries {
+      let Ok(proc_entry) = proc_entry else {
+        continue;
+      };
+      for references in ["fd", "map_files"] {
+        let mut reference_dir = proc_entry.path().clone();
+        reference_dir.push(references);
+        let Ok(reference_entries) = fs::read_dir(&reference_dir) else {
+          continue;
+        };
+        for reference_entry in reference_entries {
+          let Ok(reference_entry) = reference_entry else {
+            continue;
+          };
+
+          if let Ok(link_to) = fs::read_link(reference_entry.path()) {
+            if let Some(path_str) = link_to.to_str() {
+              candidates.remove(path_str);
+            }
+          }
+        }
+      }
+    }
+
+    candidates.values().map(|c| c.clone()).collect()
+  }
+}
+
+/**
+ *  A mapping holds its own reference to the inode, so a segment whose
+ *  descriptor has been closed is still in use. Such a segment is reachable
+ *  only through /proc/<pid>/map_files, which is why the abandoned scan cannot
+ *  rely on /proc/<pid>/fd alone.
+ */
+#[test]
+fn abandoned_scan_ignores_mapped_without_fd() {
+  use std::ffi::CString;
+
+  let name = "bifrost-mapped-without-fd-test";
+  let shm_name = CString::new(format!("/{name}")).unwrap();
+  const SIZE : usize = 1 << 20;
+
+  let address = unsafe {
+    libc::shm_unlink(shm_name.as_ptr());
+
+    let fd = libc::shm_open(
+      shm_name.as_ptr(),
+      libc::O_CREAT | libc::O_EXCL | libc::O_RDWR,
+      0o600,
+    );
+    assert!(fd >= 0, "shm_open failed");
+    assert_eq!(libc::ftruncate(fd, SIZE as libc::off_t), 0);
+
+    let address = libc::mmap(
+      std::ptr::null_mut(),
+      SIZE,
+      libc::PROT_READ | libc::PROT_WRITE,
+      libc::MAP_SHARED,
+      fd,
+      0,
+    );
+    assert_ne!(address, libc::MAP_FAILED);
+
+    assert_eq!(libc::close(fd), 0);
+
+    address
+  };
+
+  let abandoned = LinuxPlatform::list_abandoned_shm_names(name);
+  let listed : Vec<String> = abandoned
+    .iter()
+    .filter_map(|name| name.to_str().ok())
+    .map(String::from)
+    .collect();
+
+  unsafe {
+    libc::munmap(address, SIZE);
+    libc::shm_unlink(shm_name.as_ptr());
+  }
+
+  assert!(
+    !listed.iter().any(|listed_name| listed_name == name),
+    "a live mapping was reported as abandoned: {listed:?}"
+  );
 }

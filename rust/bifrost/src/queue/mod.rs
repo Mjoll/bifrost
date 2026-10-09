@@ -192,6 +192,10 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     })
   }
 
+  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+    self.name_queue.wait_until_drained(timeout)
+  }
+
   pub fn is_owner(&self) -> bool {
     self.name_queue.is_owner()
   }

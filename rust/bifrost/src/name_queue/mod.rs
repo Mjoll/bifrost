@@ -91,6 +91,10 @@ impl<P: PlatformTrait> NameQueue<P> {
     Ok(new_queue)
   }
 
+  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+    self.shm.data()?.wait_until_drained(timeout)
+  }
+
   pub fn is_owner(&self) -> bool {
     self.shm.is_owner()
   }
@@ -109,6 +113,7 @@ impl<P: PlatformTrait> NameQueue<P> {
 struct QueueInternal<P: PlatformTrait> {
   name_available: Event<P>,
   slot_available: Event<P>,
+  drained: Event<P>,
   mutable: Mutex<P, QueueMutable>,
 }
 
@@ -117,6 +122,7 @@ impl<P: PlatformTrait> QueueInternal<P> {
     QueueInternal {
       name_available: Event::new(),
       slot_available: Event::new(),
+      drained: Event::new(),
       mutable: Mutex::new(QueueMutable::new(size)),
     }
   }
@@ -202,6 +208,9 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
       if was_full {
         self.slot_available.signal()?;
       }
+      if lock.empty() {
+        self.drained.signal()?;
+      }
       return Ok(Some(name));
     }
     Ok(None)
@@ -216,10 +225,25 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
     if lock.push(name) {
       if was_empty {
         self.name_available.signal()?;
+        self.drained.clear()?;
       }
       return Ok(true);
     } else {
       return Ok(false);
+    }
+  }
+
+  fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+    let timeout = TotalTimeout::new(timeout);
+    loop {
+      {
+        let lock = self.mutable.lock_mut(MUTEX_TIMEOUT)?;
+        if lock.empty() {
+          return Ok(())
+        }
+        self.drained.clear()?;
+      }
+      self.drained.wait(timeout.remain()?)?;
     }
   }
 

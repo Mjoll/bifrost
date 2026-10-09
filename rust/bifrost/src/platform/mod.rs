@@ -4,6 +4,7 @@ use crate::{
   Error,
   MemoryLayout,
   MemoryMappable,
+  Name,
   SlicerMut,
 };
 
@@ -51,6 +52,12 @@ pub trait PlatformTrait : 'static {
 
   fn reborrow_mutex_mut<'b, 'm>(mutex: &'b mut Self::Mutex<'m>) -> Self::Mutex<'b>;
   fn reborrow_event_mut<'b, 'e>(event: &'b mut Self::Event<'e>) -> Self::Event<'b>;
+
+  /**
+   *  Clean up all shared memory with the given prefix which is not referenced
+   *  by any process.
+   */
+  fn list_abandoned_shm_names(prefix: &str) -> Vec<Name>;
 }
 
 mod mutex;
