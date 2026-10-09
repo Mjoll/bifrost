@@ -48,6 +48,40 @@ impl<'m, 'l, T: MemoryMappable, P: PlatformTrait> DerefMut for LockMut<'m, 'l, P
   }
 }
 
+pub struct OwnedLock<'m, P: PlatformTrait, T: MemoryMappable> {
+  #[allow(dead_code)] // Lock unlocks on drop
+  lock: <P::Mutex<'m> as MutexTrait<'m>>::OwnedLock,
+  data: T::Ref<'m>,
+}
+
+impl<'m, T: MemoryMappable, P: PlatformTrait> Deref for OwnedLock<'m, P, T> {
+  type Target =  T::Ref<'m>;
+
+  fn deref(&self) -> &Self::Target {
+    &self.data
+  }
+}
+
+pub struct OwnedLockMut<'m, P: PlatformTrait, T: MemoryMappable> {
+  #[allow(dead_code)] // Lock unlocks on drop
+  lock: <P::Mutex<'m> as MutexTrait<'m>>::OwnedLockMut,
+  data: T::Mut<'m>,
+}
+
+impl<'m, T: MemoryMappable, P: PlatformTrait> Deref for OwnedLockMut<'m, P, T> {
+  type Target = T::Mut<'m>;
+
+  fn deref(&self) -> &Self::Target {
+    &self.data
+  }
+}
+
+impl<'m, T: MemoryMappable, P: PlatformTrait> DerefMut for OwnedLockMut<'m, P, T> {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.data
+  }
+}
+
 pub struct Mutex<P: PlatformTrait, T: MemoryMappable> {
   data: T,
   _marker: PhantomData<(P, T)>,
@@ -77,6 +111,22 @@ impl<'m, T: MemoryMappable, P: PlatformTrait> MutexMut<'m, P, T> {
     let lock = LockMut {
       lock: self.mutex.lock_mut(timeout)?,
       data: &mut self.data,
+    };
+    Ok(lock)
+  }
+
+  pub fn to_lock(self, timeout: Duration) -> Result<OwnedLock<'m, P, T>, Error> {
+    let lock = OwnedLock {
+      lock: self.mutex.to_lock(timeout)?,
+      data: T::to_immutable(self.data),
+    };
+    Ok(lock)
+  }
+
+  pub fn to_lock_mut(self, timeout: Duration) -> Result<OwnedLockMut<'m, P, T>, Error> {
+    let lock = OwnedLockMut {
+      lock: self.mutex.to_lock_mut(timeout)?,
+      data: self.data,
     };
     Ok(lock)
   }

@@ -24,6 +24,8 @@ pub use platform::{
   LockMut,
   Mutex,
   MutexMut,
+  OwnedLock,
+  OwnedLockMut,
   Platform,
   PlatformTrait,
 };

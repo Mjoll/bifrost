@@ -25,10 +25,6 @@ pub struct LinuxMutex<'m> {
   pthread_mutex: &'m mut libc::pthread_mutex_t,
 }
 
-pub struct LinuxLock<'l, 'm> {
-  mutex: &'l mut LinuxMutex<'m>,
-}
-
 fn system_time_to_timespec(system_time: SystemTime) -> Result<libc::timespec, Error> {
   let from_epoch = system_time.duration_since(UNIX_EPOCH)?;
 
@@ -59,6 +55,10 @@ fn pthread_mutex_lock_helper(
       _ => Err(Error::FailedToLockMutex)
     }
   }
+}
+
+pub struct LinuxLock<'l, 'm> {
+  mutex: &'l mut LinuxMutex<'m>,
 }
 
 impl<'l, 'm> LinuxLock<'l, 'm> {
@@ -164,9 +164,60 @@ impl<'l, 'm> Drop for LinuxLockMut<'l, 'm> {
   }
 }
 
+pub struct LinuxOwnedLock<'m> {
+  mutex: LinuxMutex<'m>,
+}
+
+impl<'m> LinuxOwnedLock<'m> {
+  fn new(
+    mutex: LinuxMutex<'m>,
+    duration: Duration,
+  ) -> Result<LinuxOwnedLock<'m>, Error> {
+    pthread_mutex_lock_helper(mutex.pthread_mutex, duration)?;
+    Ok(LinuxOwnedLock { mutex })
+  }
+}
+
+impl<'m> Drop for LinuxOwnedLock<'m> {
+  fn drop(&mut self) {
+    unsafe {
+      if libc::pthread_mutex_unlock(self.mutex.pthread_mutex) != 0 {
+        eprintln!("Bifrost: Failed to unlock pthread mutex");
+      }
+    }
+  }
+}
+
+pub struct LinuxOwnedLockMut<'m> {
+  mutex: LinuxMutex<'m>,
+}
+
+impl<'m> LinuxOwnedLockMut<'m> {
+  fn new(
+    mutex: LinuxMutex<'m>,
+    duration: Duration,
+  ) -> Result<LinuxOwnedLockMut<'m>, Error> {
+    pthread_mutex_lock_helper(mutex.pthread_mutex, duration)?;
+    Ok(LinuxOwnedLockMut { mutex })
+  }
+}
+
+impl<'m> Drop for LinuxOwnedLockMut<'m> {
+  fn drop(&mut self) {
+    unsafe {
+      if libc::pthread_mutex_unlock(self.mutex.pthread_mutex) != 0 {
+        eprintln!("Bifrost: Failed to unlock pthread mutex");
+      }
+    }
+  }
+}
+
 impl<'m> MutexTrait<'m> for LinuxMutex<'m> {
   type Lock<'l> = LinuxLock<'l, 'm> where Self: 'l;
   type LockMut<'l> = LinuxLockMut<'l, 'm> where Self: 'l;
+  type OwnedLock = LinuxOwnedLock<'m>;
+  type OwnedLockMut = LinuxOwnedLockMut<'m>;
+
   fn memory_layout() -> MemoryLayout {
     pthread_mutex_memory_layout()
   }
@@ -200,6 +251,12 @@ impl<'m> MutexTrait<'m> for LinuxMutex<'m> {
   }
   fn lock_mut<'l>(&'l mut self, timeout: Duration) -> Result<Self::LockMut<'l>, Error> {
     LinuxLockMut::new(self, timeout)
+  }
+  fn to_lock(self, timeout: Duration) -> Result<Self::OwnedLock, Error> {
+    LinuxOwnedLock::new(self, timeout)
+  }
+  fn to_lock_mut(self, timeout: Duration) -> Result<Self::OwnedLockMut, Error> {
+    LinuxOwnedLockMut::new(self, timeout)
   }
 }
 
