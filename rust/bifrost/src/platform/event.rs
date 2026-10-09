@@ -98,8 +98,12 @@ impl<'e, P: PlatformTrait> EventMut<'e, P> {
     self.event.clear()
   }
 
-  pub fn wait(&mut self, timeout: Duration) -> Result<(), Error> {
-    self.event.wait(timeout)
+  pub fn wait(
+    &mut self,
+    timeout: Duration,
+    interrupt: Option<&dyn Fn() -> bool>,
+  ) -> Result<(), Error> {
+    self.event.wait(timeout, interrupt)
   }
 }
 

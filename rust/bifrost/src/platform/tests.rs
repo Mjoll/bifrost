@@ -52,7 +52,7 @@ pub fn test_locking() {
           }
           self.value_available.clear().unwrap();
         }
-        self.value_available.wait(TIMEOUT).unwrap();
+        self.value_available.wait(TIMEOUT, None).unwrap();
       }
     }
 
@@ -69,7 +69,7 @@ pub fn test_locking() {
           }
           self.slot_available.clear().unwrap();
         }
-        self.slot_available.wait(TIMEOUT).unwrap();
+        self.slot_available.wait(TIMEOUT, None).unwrap();
       }
     }
 

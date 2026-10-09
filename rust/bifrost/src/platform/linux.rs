@@ -363,7 +363,11 @@ impl<'e> EventTrait<'e> for LinuxEvent<'e> {
   fn signal(&mut self) -> Result<(), Error> {
     self.set_signal_value(1)
   }
-  fn wait(&mut self, duration: Duration) -> Result<(), Error> {
+  fn wait(
+    &mut self,
+    duration: Duration,
+    interrupt: Option<&dyn Fn() -> bool>,
+  ) -> Result<(), Error> {
     let lock = Self::lock_with_event_error(&mut self.mutex)?;
 
     let now = SystemTime::now();
@@ -371,6 +375,9 @@ impl<'e> EventTrait<'e> for LinuxEvent<'e> {
     let time_spec = system_time_to_timespec(abs_timeout)?;
 
     while *self.signaled == 0 {
+      if interrupt.as_ref().map(|i| i()).unwrap_or(false) {
+        return Err(Error::Interrupted);
+      }
       if SystemTime::now() >= abs_timeout {
         return Err(Error::Timeout);
       }
