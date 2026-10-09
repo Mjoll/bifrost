@@ -13,11 +13,20 @@ pub enum Error {
   BadResolution(Resolution),
   BadFrameRate(Fraction),
   BadSampleRate(u32),
+  NotAFrameQueue,
+  Timeout,
+  QueueClosed,
 }
 
 impl From<bifrost::Error> for Error {
   fn from(value: bifrost::Error) -> Self {
-    Error::ShmError(value)
+    match value {
+      bifrost::Error::NotFound => Error::NotFound,
+      bifrost::Error::AlreadyExists => Error::AlreadyExists,
+      bifrost::Error::Timeout => Error::Timeout,
+      bifrost::Error::QueueClosed => Error::QueueClosed,
+      other => Error::ShmError(other),
+    }
   }
 }
 

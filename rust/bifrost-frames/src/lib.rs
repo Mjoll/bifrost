@@ -19,8 +19,10 @@ pub use frame::{
   AudioFrameMut,
   AudioFrameRef,
   Frame,
+  FrameCache,
   FrameLock,
   FrameLockMut,
+  FrameQueue,
   VideoFrameMut,
   VideoFrameRef,
 };

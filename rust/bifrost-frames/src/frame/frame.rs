@@ -85,6 +85,14 @@ impl Frame {
       header: shm_frame.header,
     })
   }
+
+  pub(super) fn unwrap(self) -> Shm<ShmFrame> {
+    self.shm
+  }
+
+  pub(super) fn wrap(shm: Shm<ShmFrame>) -> Frame {
+    Frame { shm }
+  }
 }
 
 pub struct VideoFrameRef<'t> {

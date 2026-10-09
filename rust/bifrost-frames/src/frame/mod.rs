@@ -28,5 +28,11 @@ pub use frame::{
   VideoFrameRef,
 };
 
+mod queue;
+pub use queue::{
+  FrameCache,
+  FrameQueue,
+};
+
 #[cfg(test)]
 mod tests;
