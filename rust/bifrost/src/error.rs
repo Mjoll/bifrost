@@ -1,3 +1,5 @@
+use super::FourCC;
+
 #[derive(Debug)]
 pub enum Error {
   NotFound,
@@ -19,6 +21,8 @@ pub enum Error {
    *  shared memory over 4 GB may run into these issues.
    */
   ValueTooLarge,
+  NotInitialized,
+  FourCCMismatch { expected: FourCC, found: FourCC },
 }
 
 impl From<shared_memory::ShmemError> for Error {

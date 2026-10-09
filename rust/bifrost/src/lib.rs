@@ -13,6 +13,9 @@ pub use memory_mapping::{
   SlicerMut,
 };
 
+mod four_cc;
+pub use four_cc::FourCC;
+
 mod shm;
 pub use shm::{
   delete_shm,
