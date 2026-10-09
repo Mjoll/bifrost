@@ -16,6 +16,14 @@ pub use memory_mapping::{
 mod four_cc;
 pub use four_cc::FourCC;
 
+mod platform;
+pub use platform::{
+  LockMut,
+  Mutex,
+  MutexMut,
+  Platform,
+};
+
 mod shm;
 pub use shm::{
   delete_shm,

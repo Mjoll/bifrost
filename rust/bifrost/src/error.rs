@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 use super::FourCC;
 
 #[derive(Debug)]
@@ -23,6 +25,10 @@ pub enum Error {
   ValueTooLarge,
   NotInitialized,
   FourCCMismatch { expected: FourCC, found: FourCC },
+  FailedToInitializeMutex,
+  FailedToLockMutex,
+  Timeout,
+  SystemTimeError(SystemTimeError),
 }
 
 impl From<shared_memory::ShmemError> for Error {
@@ -53,3 +59,10 @@ impl From<bytemuck::PodCastError> for Error {
     Error::ByteMuck(value)
   }
 }
+
+impl From<SystemTimeError> for Error {
+  fn from(value: SystemTimeError) -> Self {
+    Error::SystemTimeError(value)
+  }
+}
+
