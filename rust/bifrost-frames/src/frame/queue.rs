@@ -11,7 +11,9 @@ use super::{
   ShmFrame,
 };
 
-pub use bifrost::CacheStats as FrameCacheStats;
+pub use bifrost::{
+  CacheStats as FrameCacheStats,
+};
 
 pub struct FrameCache {
   cache: bifrost::LocalCache<ShmFrame>,
@@ -58,17 +60,29 @@ impl FrameQueue {
     }
   }
 
+  pub fn register_interrupt_callback<F: FnMut() -> bool + Send + 'static>(
+    &mut self,
+    callback: F,
+    interval: Duration,
+  ) {
+    self.queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn clear_interrupt_callback(&mut self) {
+    self.queue.clear_interrupt_callback()
+  }
+
   pub fn push(
     &mut self,
     in_frame: &mut Option<Frame>,
     timeout: Duration,
-    cache: Option<&mut FrameCache>
+    cache: Option<&mut FrameCache>,
   ) -> Result<(), Error> {
     let mut shm = in_frame.take().map(|frame| frame.unwrap());
     match self.queue.push(
       &mut shm,
       timeout,
-      cache.map(|cache| &mut cache.cache)
+      cache.map(|cache| &mut cache.cache),
     ) {
       Ok(()) => {
         Ok(())
@@ -85,11 +99,11 @@ impl FrameQueue {
   pub fn pop(
     &mut self,
     timeout: Duration,
-    cache: Option<&mut FrameCache>
+    cache: Option<&mut FrameCache>,
   ) -> Result<Option<Frame>, Error> {
     Ok(self.queue.pop(
       timeout,
-      cache.map(|cache| &mut cache.cache)
+      cache.map(|cache| &mut cache.cache),
     ).map(|maybe_shm| maybe_shm.map(|shm| Frame::wrap(shm)))?)
   }
 
@@ -138,7 +152,10 @@ impl FrameQueue {
     self.queue.size()
   }
 
-  pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
+  pub fn wait_until_drained(
+    &mut self,
+    timeout: Duration,
+  ) -> Result<(), Error> {
     Ok(self.queue.wait_until_drained(timeout)?)
   }
 

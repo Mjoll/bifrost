@@ -19,6 +19,7 @@ pub enum Error {
   QueueClosed,
   StreamFormatChange,
   CorruptStream,
+  Interrupted,
 }
 
 impl From<bifrost::Error> for Error {
@@ -28,6 +29,7 @@ impl From<bifrost::Error> for Error {
       bifrost::Error::AlreadyExists => Error::AlreadyExists,
       bifrost::Error::Timeout => Error::Timeout,
       bifrost::Error::QueueClosed => Error::QueueClosed,
+      bifrost::Error::Interrupted => Error::Interrupted,
       other => Error::ShmError(other),
     }
   }

@@ -100,6 +100,9 @@ impl From<bifrost_frames::Error> for BifrostStatus {
       BadResolution(..) => BifrostStatus::BadResolution,
       BadFrameRate(..) => BifrostStatus::BadFrameRate,
       BadSampleRate(..) => BifrostStatus::BadSampleRate,
+      // Note: This cannot currently happen since we don't expose the interrupt
+      // logic in the C API.
+      Interrupted => BifrostStatus::Timeout,
     }
   }
 }
