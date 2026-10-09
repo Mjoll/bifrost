@@ -14,6 +14,12 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::LinuxPlatform as Platform;
 
+#[cfg(target_os = "windows")]
+mod windows;
+
+#[cfg(target_os = "windows")]
+pub use windows::WindowsPlatform as Platform;
+
 pub trait MutexTrait<'m> : Sized {
   type Lock<'l> where Self: 'l;
   type LockMut<'l> where Self: 'l;

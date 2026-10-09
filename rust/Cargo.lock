@@ -67,6 +67,7 @@ dependencies = [
  "libc",
  "memory_mappable_derive",
  "shared_memory",
+ "windows-sys",
 ]
 
 [[package]]

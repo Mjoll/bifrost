@@ -9,5 +9,12 @@ shared_memory = "0.12.4"
 memory_mappable_derive = { path = "memory-mappable-derive" }
 libc = "0.2.189"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
