@@ -1,5 +1,8 @@
 use std::{
-  ffi,
+  ffi::{
+    CStr,
+    c_void,
+  },
   ptr,
   time::Duration,
 };
@@ -24,6 +27,7 @@ enum BifrostStatus {
   BadResolution = 14,
   BadFrameRate = 15,
   BadSampleRate = 16,
+  Interrupted = 17,
 }
 
 impl BifrostStatus {
@@ -46,6 +50,7 @@ impl BifrostStatus {
       14 => BifrostStatus::BadResolution,
       15 => BifrostStatus::BadFrameRate,
       16 => BifrostStatus::BadSampleRate,
+      17 => BifrostStatus::Interrupted,
       _ => {
         return None;
       }
@@ -59,7 +64,7 @@ unsafe extern "C" fn bifrost_status_to_string(in_status: u32) -> *const i8 {
     return c"<invalid status".as_ptr();
   };
 
-  let string : &'static ffi::CStr = match status {
+  let string : &'static CStr = match status {
     BifrostStatus::Ok => c"OK",
     BifrostStatus::InvalidArgument => c"Invalid argument",
     BifrostStatus::Utf8Error => c"Utf8 error",
@@ -77,6 +82,7 @@ unsafe extern "C" fn bifrost_status_to_string(in_status: u32) -> *const i8 {
     BifrostStatus::BadResolution => c"Bad resolution",
     BifrostStatus::BadFrameRate => c"Bad frame rate",
     BifrostStatus::BadSampleRate => c"Bad sample rate",
+    BifrostStatus::Interrupted => c"Interrupted",
   };
 
   string.as_ptr()
@@ -100,15 +106,13 @@ impl From<bifrost_frames::Error> for BifrostStatus {
       BadResolution(..) => BifrostStatus::BadResolution,
       BadFrameRate(..) => BifrostStatus::BadFrameRate,
       BadSampleRate(..) => BifrostStatus::BadSampleRate,
-      // Note: This cannot currently happen since we don't expose the interrupt
-      // logic in the C API.
-      Interrupted => BifrostStatus::Timeout,
+      Interrupted => BifrostStatus::Interrupted,
     }
   }
 }
 
 unsafe fn c_string_to_string<'t>(c_str: *const i8) -> Result<&'t str, BifrostStatus> {
-  unsafe { ffi::CStr::from_ptr(c_str) }.to_str()
+  unsafe { CStr::from_ptr(c_str) }.to_str()
     .map_err(|_| BifrostStatus::Utf8Error)
 }
 
@@ -281,6 +285,57 @@ unsafe extern "C" fn bifrost_stream_wait_until_drained(
     in_stream.wait_until_drained(Duration::from_millis(timeout_ms))?;
     Ok(())
   })
+}
+
+struct CInterruptCallback {
+  callback: unsafe extern "C" fn(*mut c_void) -> u32,
+  userdata: *mut c_void,
+}
+
+impl CInterruptCallback {
+  fn call(&mut self) -> bool {
+    unsafe { (self.callback)(self.userdata)  != 0 }
+  }
+}
+
+unsafe impl Send for CInterruptCallback { }
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn  bifrost_stream_register_interrupt_callback(
+  in_stream: *mut bifrost_frames::Stream,
+  callback: Option<unsafe extern "C" fn(*mut c_void) -> u32>,
+  userdata: *mut c_void,
+  interval_ms: u64,
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+
+  let Some(callback) = callback else {
+    return BifrostStatus::InvalidArgument;
+  };
+
+  let mut c_callback = CInterruptCallback { callback, userdata };
+
+  let in_stream = unsafe { &mut *in_stream };
+  in_stream.register_interrupt_callback(
+    move || { c_callback.call() },
+    Duration::from_millis(interval_ms),
+  );
+
+  return BifrostStatus::Ok;
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn bifrost_stream_clear_interrupt_callback(
+  in_stream: *mut bifrost_frames::Stream,
+) -> BifrostStatus {
+  if in_stream == ptr::null_mut() {
+    return BifrostStatus::InvalidArgument;
+  }
+  let in_stream = unsafe { &mut *in_stream };
+  in_stream.clear_interrupt_callback();
+  return BifrostStatus::Ok;
 }
 
 #[repr(C)]

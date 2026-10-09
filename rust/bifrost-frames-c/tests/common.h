@@ -1,11 +1,15 @@
+#ifndef BIFROST_FRAMES_TESTS_COMMON_H
+#define BIFROST_FRAMES_TESTS_COMMON_H
+
 #include <stddef.h>
+
 #include <stdio.h>
 #include <bifrost_frames.h>
 
 #define TEST_QUEUE_NAME "bifrost_frames_c_test_0"
-#define TEST_FRAME_COUNT 1000
+#define TEST_FRAME_COUNT 10000
 
-const struct BifrostVideoInfo test_video_info = {
+static const struct BifrostVideoInfo test_video_info = {
   .resolution = {
     .width = 1920,
     .height = 1080,
@@ -18,13 +22,13 @@ const struct BifrostVideoInfo test_video_info = {
   .field_order = BIFROST_FIELD_ORDER_PROGRESSIVE,
 };
 
-const struct BifrostAudioInfo test_audio_info = {
+static const struct BifrostAudioInfo test_audio_info = {
   .sample_rate = 48000,
   .channel_count = 2,
   .format = BIFROST_AUDIO_FORMAT_S16,
 };
 
-const struct BifrostFrameInfo test_frame_info = {
+static const struct BifrostFrameInfo test_frame_info = {
   .frame_rate = {
     .numerator = 25,
     .denominator = 1,
@@ -48,4 +52,4 @@ const struct BifrostFrameInfo test_frame_info = {
   } \
 } while (0);
 
-
+#endif // BIFROST_FRAMES_TESTS_COMMON_H

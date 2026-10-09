@@ -26,6 +26,7 @@ enum BifrostStatus {
   BIFROST_STATUS_BAD_RESOLUTION = 14,
   BIFROST_STATUS_BAD_FRAME_RATE = 15,
   BIFROST_STATUS_BAD_SAMPLE_RATE = 16,
+  BIFROST_STATUS_INTERRUPTED = 17,
 };
 
 const char* bifrost_status_to_string(enum BifrostStatus status);
@@ -133,6 +134,33 @@ enum BifrostStatus bifrost_stream_pop(
 enum BifrostStatus bifrost_stream_wait_until_drained(
   BifrostStream in_stream,
   uint64_t timeout_ms
+);
+
+/**
+ *  Register a interrupt callback. Existing interrupt callback will be replaced.
+ *
+ *  The interrupt callback will be called with the given interval on a
+ *  callback thread. If the callback returns a non-zero return value the
+ *  process local state of the stream will be marked as interrupted. The
+ *  callback thread will stop and any blocking calls in progress or future
+ *  blocking calls will immediately return BIFROST_STATUS_INTERRUPTED. In
+ *  order to clear this state call bifrost_stream_clear_interrupt_callback.
+ *
+ *  Important: Since the callback is called on a different thread it is
+ *  important that this callback is thread safe.
+ */
+enum BifrostStatus bifrost_stream_register_interrupt_callback(
+  BifrostStream in_stream,
+  uint32_t (*callback)(void*),
+  void* user_data,
+  uint64_t check_interval_ms
+);
+
+/**
+ *  Clear current registered interrupt callback
+ */
+enum BifrostStatus bifrost_stream_clear_interrupt_callback(
+  BifrostStream in_stream
 );
 
 enum BifrostStatus bifrost_stream_allocate_frame(
