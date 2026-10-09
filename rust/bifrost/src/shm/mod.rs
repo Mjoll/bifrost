@@ -228,6 +228,10 @@ impl<T: ShmData> Shm<T> {
   }
 }
 
+// I'm pretty sure it is a bug in the shared_memory crate that it does not
+// implement Send.
+unsafe impl<T: ShmData> Send for Shm<T> { }
+
 // Delete shared memory without doing any on the content
 pub fn delete_shm(name: Name) -> Result<(), Error> {
   let name = name.to_str()?;

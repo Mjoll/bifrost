@@ -28,6 +28,7 @@ enum BifrostStatus {
   BadFrameRate = 15,
   BadSampleRate = 16,
   Interrupted = 17,
+  AsyncStreamThreadDead = 18,
 }
 
 impl BifrostStatus {
@@ -51,6 +52,7 @@ impl BifrostStatus {
       15 => BifrostStatus::BadFrameRate,
       16 => BifrostStatus::BadSampleRate,
       17 => BifrostStatus::Interrupted,
+      18 => BifrostStatus::AsyncStreamThreadDead,
       _ => {
         return None;
       }
@@ -83,6 +85,7 @@ unsafe extern "C" fn bifrost_status_to_string(in_status: u32) -> *const i8 {
     BifrostStatus::BadFrameRate => c"Bad frame rate",
     BifrostStatus::BadSampleRate => c"Bad sample rate",
     BifrostStatus::Interrupted => c"Interrupted",
+    BifrostStatus::AsyncStreamThreadDead => c"Async stream thread died",
   };
 
   string.as_ptr()
@@ -107,6 +110,7 @@ impl From<bifrost_frames::Error> for BifrostStatus {
       BadFrameRate(..) => BifrostStatus::BadFrameRate,
       BadSampleRate(..) => BifrostStatus::BadSampleRate,
       Interrupted => BifrostStatus::Interrupted,
+      AsyncStreamThreadDead => BifrostStatus::AsyncStreamThreadDead,
     }
   }
 }

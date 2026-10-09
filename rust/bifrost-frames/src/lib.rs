@@ -28,5 +28,8 @@ pub use frame::{
 };
 
 mod stream;
-pub use stream::Stream;
+pub use stream::{
+  AsyncStream,
+  Stream,
+};
 
