@@ -13,6 +13,7 @@ use std::{
 
 use super::{
   Error,
+  InterruptController,
   Frame,
   FrameInfo,
   Stream,
@@ -20,13 +21,20 @@ use super::{
 
 pub struct AsyncStream {
   internal: Option<Internal>,
+  interrupt_controller: InterruptController,
 }
 
 impl AsyncStream {
-  pub fn new(stream: Stream) -> AsyncStream {
+  pub fn new(mut stream: Stream) -> Result<AsyncStream, Error> {
+    let interrupt_controller = stream.make_interrupt_controller()?;
     let internal = Internal::new(stream);
 
-    AsyncStream { internal: Some(internal) }
+    let async_stream = AsyncStream {
+      internal: Some(internal),
+      interrupt_controller
+    };
+
+    Ok(async_stream)
   }
 
   pub fn allocate<F>(
@@ -89,6 +97,7 @@ impl AsyncStream {
 
 impl Drop for AsyncStream {
   fn drop(&mut self) {
+    let _ = self.interrupt_controller.abort();
     if let Some(internal) = self.internal.take() {
       drop(internal.sender);
       let _ = internal.join_handle.join();

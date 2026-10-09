@@ -39,7 +39,10 @@ pub use shm::{
 };
 
 mod name_queue;
-pub use name_queue::NameQueue;
+pub use name_queue::{
+  InterruptController,
+  NameQueue,
+};
 
 mod queue;
 pub use queue::{

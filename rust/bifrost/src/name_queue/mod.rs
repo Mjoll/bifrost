@@ -16,19 +16,26 @@ use super::{
   ShmData,
 };
 
-mod interrupt_callback;
-use interrupt_callback::InterruptCallback;
+trait Interrupt : Send {
+  fn is_aborted(&self) -> bool;
+}
+
+mod interrupt_callback_thread;
+use interrupt_callback_thread::InterruptCallbackThread;
+
+mod interrupt_token;
+pub use interrupt_token::Controller as InterruptController;
 
 pub struct NameQueue<P: PlatformTrait> {
   size: usize,
   shm: Shm<QueueInternal<P>>,
-  interrupt_callback: Option<InterruptCallback<P>>,
+  interrupt: Option<Box<dyn Interrupt>>,
 }
 
 impl<P: PlatformTrait> NameQueue<P> {
   pub fn new(queue_name: Name, size: usize) -> Result<NameQueue<P>, Error> {
     let shm = Shm::new(queue_name, QueueInternal::new(size))?;
-    Ok(NameQueue { size, shm, interrupt_callback: None })
+    Ok(NameQueue { size, shm, interrupt: None })
   }
 
   pub fn open(queue_name: Name) -> Result<NameQueue<P>, Error> {
@@ -37,7 +44,7 @@ impl<P: PlatformTrait> NameQueue<P> {
       let lock = shm.data()?.mutable.to_lock(MUTEX_TIMEOUT)?;
       lock.elements.len()
     };
-    Ok(NameQueue { size, shm, interrupt_callback: None })
+    Ok(NameQueue { size, shm, interrupt: None })
   }
 
   pub fn register_interrupt_callback<F: FnMut() -> bool + Send + 'static>(
@@ -45,12 +52,21 @@ impl<P: PlatformTrait> NameQueue<P> {
     callback: F,
     interval: Duration,
   ) {
-    let callback = InterruptCallback::new(self.shm.name(), callback, interval);
-    self.interrupt_callback = Some(callback);
+    let callback = InterruptCallbackThread::<P>::new(self.shm.name(), callback, interval);
+    self.interrupt = Some(Box::new(callback));
+  }
+
+  pub fn make_interrupt_controller(
+    &mut self
+  ) -> Result<InterruptController<P>, Error> {
+    let (controller, token) = interrupt_token::make_controller(self.shm.name())?;
+
+    self.interrupt = Some(Box::new(token));
+    Ok(controller)
   }
 
   pub fn clear_interrupt_callback(&mut self) {
-    self.interrupt_callback = None;
+    self.interrupt = None;
   }
 
   pub fn close(&mut self) -> Result<(), Error> {
@@ -58,7 +74,7 @@ impl<P: PlatformTrait> NameQueue<P> {
   }
 
   pub fn push(&mut self, name: Name, timeout: Duration) -> Result<(), Error> {
-    self.shm.data()?.push(name, timeout, self.interrupt_callback.as_ref())
+    self.shm.data()?.push(name, timeout, self.interrupt.as_ref())
   }
 
   pub fn try_push(&mut self, name: Name) -> Result<bool, Error> {
@@ -66,7 +82,7 @@ impl<P: PlatformTrait> NameQueue<P> {
   }
 
   pub fn pop(&mut self, timeout: Duration) -> Result<Option<Name>, Error> {
-    self.shm.data()?.pop(timeout, self.interrupt_callback.as_ref())
+    self.shm.data()?.pop(timeout, self.interrupt.as_ref())
   }
 
   pub fn try_pop(&mut self) -> Result<Option<Name>, Error> {
@@ -113,7 +129,7 @@ impl<P: PlatformTrait> NameQueue<P> {
   }
 
   pub fn wait_until_drained(&mut self, timeout: Duration) -> Result<(), Error> {
-    self.shm.data()?.wait_until_drained(timeout, self.interrupt_callback.as_ref())
+    self.shm.data()?.wait_until_drained(timeout, self.interrupt.as_ref())
   }
 
   pub fn is_owner(&self) -> bool {
@@ -181,7 +197,7 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
   fn push(
     &mut self,
     name: Name, timeout: Duration,
-    interrupt: Option<&InterruptCallback<P>>,
+    interrupt: Option<&Box<dyn Interrupt>>,
   ) -> Result<(), Error> {
     let timeout = TotalTimeout::new(timeout);
     loop {
@@ -212,7 +228,7 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
   fn pop(
     &mut self,
     timeout: Duration,
-    interrupt: Option<&InterruptCallback<P>>,
+    interrupt: Option<&Box<dyn Interrupt>>,
   ) -> Result<Option<Name>, Error> {
     let timeout = TotalTimeout::new(timeout);
     loop {
@@ -288,7 +304,7 @@ impl<'t, P: PlatformTrait> QueueInternalRef<'t, P> {
   fn wait_until_drained(
     &mut self,
     timeout: Duration,
-    interrupt: Option<&InterruptCallback<P>>,
+    interrupt: Option<&Box<dyn Interrupt>>,
   ) -> Result<(), Error> {
     let timeout = TotalTimeout::new(timeout);
     loop {

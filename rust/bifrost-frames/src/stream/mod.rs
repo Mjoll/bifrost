@@ -9,6 +9,7 @@ use bifrost::derive::MemoryMappable;
 
 use super::{
   Error,
+  InterruptController,
   Frame,
   FrameCache,
   FrameInfo,
@@ -144,6 +145,12 @@ impl Stream {
     interval: Duration,
   ) {
     self.queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn make_interrupt_controller(
+    &mut self
+  ) -> Result<InterruptController, Error> {
+    self.queue.make_interrupt_controller()
   }
 
   pub fn clear_interrupt_callback(&mut self) {

@@ -18,6 +18,7 @@ mod frame;
 pub use frame::{
   AudioFrameMut,
   AudioFrameRef,
+  InterruptController,
   Frame,
   FrameCache,
   FrameLock,
