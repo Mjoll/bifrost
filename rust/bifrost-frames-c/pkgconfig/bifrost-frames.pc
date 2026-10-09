@@ -1,0 +1,10 @@
+prefix=/usr/
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib64
+includedir=${prefix}/include
+
+Name: Bifrost Frames
+Description: Bifrost shared memory frame transport
+Version: 0.0.0
+Libs: -L${libdir} -lbifrost_frames_c
+Cflags: -I${includedir}

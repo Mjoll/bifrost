@@ -4,4 +4,4 @@ members = [
   "bifrost",
   "bifrost/memory-mappable-derive",
   "bifrost-frames"
-]
+, "bifrost-frames-c"]
