@@ -2,5 +2,6 @@
 resolver = "3"
 members = [
   "bifrost",
-  "bifrost/memory-mappable-derive"
+  "bifrost/memory-mappable-derive",
+  "bifrost-frames"
 ]

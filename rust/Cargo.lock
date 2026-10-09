@@ -19,6 +19,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bifrost-frames"
+version = "0.1.0"
+dependencies = [
+ "bifrost",
+ "bytemuck",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
