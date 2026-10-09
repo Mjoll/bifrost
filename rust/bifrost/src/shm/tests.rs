@@ -10,6 +10,7 @@ use super::{
   Error,
   FourCC,
   MemoryMappable,
+  Name,
   Shm,
   ShmData,
 };
@@ -27,7 +28,7 @@ fn simple_shm_test() {
     }
   }
 
-  let shm_name = "bifrost-test-1";
+  let shm_name = Name::new("bifrost-test-1").unwrap();
 
   delete_shm(shm_name).unwrap();
 
@@ -97,7 +98,7 @@ fn simple_shm_test_2() {
     one: 1,
   };
 
-  let shm_name = "bifrost-test-2";
+  let shm_name = Name::new("bifrost-test-2").unwrap();
 
   // Clean up potential left over memory from earlier crashed runs of the
   // test
@@ -166,7 +167,7 @@ fn test_shm_fourcc_check() {
     one: 1,
   };
 
-  let shm_name = "bifrost-test-3";
+  let shm_name = Name::new("bifrost-test-3").unwrap();
 
   // Clean up potential left over shm from previous run
   delete_shm(shm_name).unwrap();

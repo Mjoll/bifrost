@@ -25,10 +25,16 @@ pub use platform::{
   Mutex,
   MutexMut,
   Platform,
+  PlatformTrait,
 };
 
 mod shm;
 pub use shm::{
   delete_shm,
+  Name,
   Shm,
+  ShmData,
 };
+
+mod name_queue;
+pub use name_queue::NameQueue;

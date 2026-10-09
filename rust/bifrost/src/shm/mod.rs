@@ -18,19 +18,60 @@ use super::{
   SlicerMut,
 };
 
+const NAME_MAX_LENGTH : usize = 256;
+
+#[derive(Eq, Hash, Copy, Clone, Debug, PartialEq, Pod, Zeroable)]
+#[repr(C)]
+pub struct Name {
+  length: u32,
+  bytes: [u8; NAME_MAX_LENGTH],
+}
+
+impl Name {
+  pub fn new(name: &str) -> Result<Name, Error> {
+    let src = name.as_bytes();
+    if src.len() > NAME_MAX_LENGTH {
+      return Err(Error::NameTooLong);
+    }
+
+    let length = src.len() as u32;
+
+    let mut bytes = [0u8; NAME_MAX_LENGTH];
+    bytes[0..src.len()].copy_from_slice(src);
+
+    Ok(Name { length, bytes })
+  }
+
+  pub fn to_str(&self) -> Result<&str, Error> {
+    let bytes = &self.bytes[0..self.length as usize];
+    str::from_utf8(bytes)
+      .map_err(|_| Error::Utf8Error)
+  }
+}
+
+impl Default for Name {
+  fn default() -> Self {
+    Name {
+      length: 0,
+      bytes: [0u8; NAME_MAX_LENGTH]
+    }
+  }
+}
+
 pub trait ShmData : MemoryMappable {
   fn four_cc() -> FourCC;
 }
 
 pub struct Shm<T: ShmData> {
   shm: shared_memory::Shmem,
-  name: String,
+  name: Name,
   data_layout: MemoryLayout,
   _marker: PhantomData<T>,
 }
 
 impl<T: ShmData> Shm<T> {
-  pub fn new(name: &str, data: T) -> Result<Shm<T>, Error> {
+  pub fn new(name: Name, data: T) -> Result<Shm<T>, Error> {
+    let name_str = name.to_str()?;
     let data_layout = data.memory_layout();
 
     let header_layout = ShmHeader::empty().memory_layout();
@@ -40,7 +81,7 @@ impl<T: ShmData> Shm<T> {
     size += data_layout.size;
 
     let mut shm = shared_memory::ShmemConf::new()
-      .os_id(name)
+      .os_id(name_str)
       .size(size)
       .create()?;
 
@@ -100,12 +141,13 @@ impl<T: ShmData> Shm<T> {
     }
 
 
-    Ok(Shm { shm, name: name.to_string(), data_layout, _marker: Default::default() })
+    Ok(Shm { shm, name, data_layout, _marker: Default::default() })
   }
 
-  pub fn open(name: &str) -> Result<Shm<T>, Error> {
+  pub fn open(name: Name) -> Result<Shm<T>, Error> {
+    let name_str = name.to_str()?;
     let mut shm = shared_memory::ShmemConf::new()
-      .os_id(name)
+      .os_id(name_str)
       .open()?;
 
 
@@ -150,11 +192,11 @@ impl<T: ShmData> Shm<T> {
       });
     }
 
-    Ok(Shm { shm, name: name.to_string(), data_layout, _marker: Default::default() })
+    Ok(Shm { shm, name, data_layout, _marker: Default::default() })
   }
 
-  pub fn name(&self) -> &str {
-    &self.name
+  pub fn name(&self) -> Name {
+    self.name
   }
 
   pub fn release_ownership(&mut self) {
@@ -183,7 +225,8 @@ impl<T: ShmData> Shm<T> {
 }
 
 // Delete shared memory without doing any on the content
-pub fn delete_shm(name: &str) -> Result<(), Error> {
+pub fn delete_shm(name: Name) -> Result<(), Error> {
+  let name = name.to_str()?;
   match shared_memory::ShmemConf::new().os_id(name).open() {
     Ok(mut shm) => {
       shm.set_owner(true);

@@ -32,6 +32,9 @@ pub enum Error {
   FailedToWaitForEvent,
   Timeout,
   SystemTimeError(SystemTimeError),
+  QueueClosed,
+  NameTooLong,
+  Utf8Error,
 }
 
 impl From<shared_memory::ShmemError> for Error {
