@@ -29,6 +29,16 @@ impl FrameCache {
   }
 }
 
+pub struct InterruptController {
+  internal: bifrost::InterruptController<Platform>,
+}
+
+impl InterruptController {
+  pub fn abort(&mut self) -> Result<(), Error> {
+    Ok(self.internal.abort()?)
+  }
+}
+
 pub struct FrameQueue {
   queue: bifrost::Queue<Platform, ShmFrame>,
 }
@@ -66,6 +76,13 @@ impl FrameQueue {
     interval: Duration,
   ) {
     self.queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn make_interrupt_controller(
+    &mut self
+  ) -> Result<InterruptController, Error> {
+    let internal = self.queue.make_interrupt_controller()?;
+    Ok(InterruptController { internal })
   }
 
   pub fn clear_interrupt_callback(&mut self) {

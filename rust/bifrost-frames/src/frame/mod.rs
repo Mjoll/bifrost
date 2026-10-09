@@ -32,6 +32,7 @@ mod queue;
 pub use queue::{
   FrameCache,
   FrameQueue,
+  InterruptController,
 };
 
 #[cfg(test)]

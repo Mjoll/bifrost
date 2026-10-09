@@ -50,7 +50,7 @@ pub trait EventTrait<'e> : Sized {
   fn from_existing_mut(slicer: SlicerMut<'e>) -> Result<(SlicerMut<'e>, Self), Error>;
 }
 
-pub trait PlatformTrait : 'static {
+pub trait PlatformTrait : 'static + Send {
   type Mutex<'m> : MutexTrait<'m>;
   type Event<'e> : EventTrait<'e>;
 

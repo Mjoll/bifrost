@@ -7,6 +7,7 @@ use std::{
 use super::{
   delete_shm,
   Error,
+  InterruptController,
   Name,
   NameQueue,
   PlatformTrait,
@@ -71,6 +72,12 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     interval: Duration,
   ) {
     self.name_queue.register_interrupt_callback(callback, interval)
+  }
+
+  pub fn make_interrupt_controller(
+    &mut self
+  ) -> Result<InterruptController<P>, Error> {
+    self.name_queue.make_interrupt_controller()
   }
 
   pub fn clear_interrupt_callback(&mut self) {
