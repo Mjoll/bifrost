@@ -18,6 +18,8 @@ pub use four_cc::FourCC;
 
 mod platform;
 pub use platform::{
+  Event,
+  EventMut,
   Lock,
   LockMut,
   Mutex,

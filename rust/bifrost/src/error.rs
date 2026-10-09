@@ -27,6 +27,9 @@ pub enum Error {
   FourCCMismatch { expected: FourCC, found: FourCC },
   FailedToInitializeMutex,
   FailedToLockMutex,
+  FailedToInitializeEvent,
+  FailedToUpdateEventSignal,
+  FailedToWaitForEvent,
   Timeout,
   SystemTimeError(SystemTimeError),
 }

@@ -9,11 +9,13 @@ use std::{
 
 use crate::{
   MemoryLayout,
+  MemoryMappable,
   SlicerMut,
 };
 
 use super::{
   Error,
+  EventTrait,
   MutexTrait,
   PlatformTrait,
 };
@@ -201,6 +203,185 @@ impl<'m> MutexTrait<'m> for LinuxMutex<'m> {
   }
 }
 
+pub struct LinuxEvent<'e> {
+  mutex: LinuxMutex<'e>,
+  pthread_cond: &'e mut libc::pthread_cond_t,
+  signaled: &'e mut u32,
+}
+
+impl<'e> LinuxEvent<'e> {
+  /**
+   *  Utility function for locking the mutex and treating a 5 second
+   *  timeout as an error. The signal lock is not meant to be held for
+   *  long. If it takes more than 5 seconds to lock something has gone
+   *  horribly wrong so we just map this to FailedToSignal
+   */
+  fn lock_with_event_error<'l>(
+    mutex: &'l mut LinuxMutex<'e>
+  ) -> Result<LinuxLock<'l, 'e>, Error> {
+    match mutex.lock(EVENT_MUTEX_TIMEOUT) {
+      Ok(lock) => Ok(lock),
+      Err(Error::Timeout) => {
+        return Err(Error::FailedToUpdateEventSignal);
+      },
+      Err(error) => {
+        return Err(error);
+      }
+    }
+  }
+
+  fn set_signal_value(&mut self, value: u32) -> Result<(), Error> {
+    let _lock = Self::lock_with_event_error(&mut self.mutex)?;
+
+    *self.signaled = value;
+
+    unsafe {
+      if libc::pthread_cond_broadcast(self.pthread_cond) != 0 {
+        return Err(Error::FailedToUpdateEventSignal);
+      }
+    }
+    Ok(())
+  }
+}
+
+struct CondBuilder {
+  attr: libc::pthread_condattr_t,
+}
+
+impl CondBuilder {
+  pub fn new() -> Result<CondBuilder, Error> {
+    let attr : libc::pthread_condattr_t = unsafe {
+      let mut attr : libc::pthread_condattr_t = mem::zeroed();
+
+
+      if libc::pthread_condattr_init(&mut attr) != 0 {
+        return Err(Error::FailedToInitializeEvent);
+      }
+      attr
+    };
+
+    Ok(CondBuilder { attr })
+  }
+
+  pub fn with_pshared(mut self) -> Result<CondBuilder, Error> {
+    unsafe {
+      if libc::pthread_condattr_setpshared(&mut self.attr, libc::PTHREAD_PROCESS_SHARED) != 0 {
+        return Err(Error::FailedToInitializeEvent);
+      }
+    }
+    Ok(self)
+  }
+
+  pub fn build<'t>(self, dst: &mut [u8]) -> Result<(), Error> {
+    let pthread_cond : *mut libc::pthread_cond_t =
+      dst.as_mut_ptr().cast::<libc::pthread_cond_t>();
+
+    unsafe {
+      if libc::pthread_cond_init(pthread_cond, &self.attr) != 0 {
+        return Err(Error::FailedToInitializeEvent);
+      }
+    };
+    Ok(())
+  }
+}
+
+impl Drop for CondBuilder {
+  fn drop(&mut self) {
+    unsafe {
+      // There really is nothing to do if exit code is non zero
+      libc::pthread_condattr_destroy(&mut self.attr);
+    }
+  }
+}
+
+
+
+const EVENT_MUTEX_TIMEOUT : Duration = Duration::from_secs(5);
+
+impl<'e> EventTrait<'e> for LinuxEvent<'e> {
+  fn clear(&mut self) -> Result<(), Error> {
+    self.set_signal_value(0)
+  }
+  fn signal(&mut self) -> Result<(), Error> {
+    self.set_signal_value(1)
+  }
+  fn wait(&mut self, duration: Duration) -> Result<(), Error> {
+    let lock = Self::lock_with_event_error(&mut self.mutex)?;
+
+    let now = SystemTime::now();
+    let abs_timeout = now + duration;
+    let time_spec = system_time_to_timespec(abs_timeout)?;
+
+    while *self.signaled == 0 {
+      if SystemTime::now() >= abs_timeout {
+        return Err(Error::Timeout);
+      }
+      unsafe {
+        match libc::pthread_cond_timedwait(
+          self.pthread_cond,
+          lock.mutex.pthread_mutex,
+          &time_spec,
+        ) {
+          0 => { },
+          libc::ETIMEDOUT => {
+            return Err(Error::Timeout);
+          },
+          _other => {
+            return Err(Error::FailedToWaitForEvent);
+          }
+        }
+      }
+    }
+
+    return Ok(())
+  }
+
+  fn memory_layout() -> MemoryLayout {
+    LinuxMutex::memory_layout()
+      .with_memory_layout(pthread_cond_memory_layout())
+      .with::<u32>()
+  }
+
+  fn initialize<'t>(slicer: SlicerMut<'t>) -> Result<SlicerMut<'t>, Error> {
+    let slicer = LinuxMutex::initialize(slicer)?;
+
+    let (slicer, cond_data_mut) = slicer.consume(pthread_cond_memory_layout())?;
+
+    let _ : () = CondBuilder::new()?
+      .with_pshared()?
+      .build(cond_data_mut)?;
+
+    let signaled = 0u32;
+    let slicer = signaled.initialize(slicer)?;
+
+    Ok(slicer)
+  }
+
+  fn from_existing_mut(slicer: SlicerMut<'e>) -> Result<(SlicerMut<'e>, Self), Error> {
+    let (slicer, mutex) = LinuxMutex::from_existing_mut(slicer)?;
+
+    let (slicer, cond_data_mut) = slicer.consume(pthread_cond_memory_layout())?;
+
+    let pthread_cond : &'e mut libc::pthread_cond_t = {
+      let byte_ptr : *mut u8 = cond_data_mut.as_mut_ptr();
+      let pthread_cond : *mut libc::pthread_cond_t =
+        byte_ptr.cast::<libc::pthread_cond_t>();
+      unsafe { &mut *pthread_cond }
+    };
+
+    let (slicer, signaled) = u32::map_mut(slicer)?;
+
+    let event = LinuxEvent {
+      mutex,
+      pthread_cond,
+      signaled,
+    };
+
+    Ok((slicer, event))
+  }
+}
+
+
 fn pthread_mutex_memory_layout() -> MemoryLayout {
   MemoryLayout {
     alignment: mem::align_of::<libc::pthread_mutex_t>(),
@@ -208,12 +389,28 @@ fn pthread_mutex_memory_layout() -> MemoryLayout {
   }
 }
 
+fn pthread_cond_memory_layout() -> MemoryLayout {
+  MemoryLayout {
+    alignment: mem::align_of::<libc::pthread_cond_t>(),
+    size: mem::size_of::<libc::pthread_cond_t>(),
+  }
+}
+
 pub struct LinuxPlatform;
 
 impl PlatformTrait for LinuxPlatform {
   type Mutex<'m> = LinuxMutex<'m>;
+  type Event<'e> = LinuxEvent<'e>;
 
   fn reborrow_mutex_mut<'b, 'm>(mutex: &'b mut Self::Mutex<'m>) -> Self::Mutex<'b> {
     LinuxMutex { pthread_mutex: mutex.pthread_mutex }
+  }
+
+  fn reborrow_event_mut<'b, 'e>(event: &'b mut Self::Event<'e>) -> Self::Event<'b> {
+    LinuxEvent {
+      mutex: Self::reborrow_mutex_mut(&mut event.mutex),
+      pthread_cond: event.pthread_cond,
+      signaled: event.signaled,
+    }
   }
 }

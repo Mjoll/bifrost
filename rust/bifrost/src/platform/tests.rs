@@ -5,6 +5,7 @@ use std::{
 };
 
 use super::{
+  Event,
   Mutex,
   Platform,
   Error,
@@ -22,49 +23,61 @@ pub fn test_locking() {
 
   #[derive(MemoryMappable)]
   struct Queue {
+    slot_available: Event<Platform>,
+    value_available: Event<Platform>,
     inner: Mutex<Platform, QueueMutable>,
   }
 
   const TIMEOUT : Duration = Duration::from_secs(5);
 
-  impl<'t> QueueMut<'t> {
+  impl<'t> QueueRef<'t> {
     fn is_closed(&mut self) -> bool {
-      let lock = self.inner.lock_mut(TIMEOUT).unwrap();
+      let lock = self.inner.lock(TIMEOUT).unwrap();
       lock.is_closed()
     }
 
     fn pop(&mut self) -> Option<u32> {
-      // TODO: We currently don't have a syncrhonization primitive so we'll
-      // just have to use a tight loop for now
       loop {
         {
           let mut lock = self.inner.lock_mut(TIMEOUT).unwrap();
+          let was_full = lock.full();
           if let Some(value) = lock.pop() {
+            if was_full {
+              self.slot_available.signal().unwrap();
+            }
             return Some(value);
           }
           if lock.is_closed() {
             return None;
           }
+          self.value_available.clear().unwrap();
         }
+        self.value_available.wait(TIMEOUT).unwrap();
       }
     }
 
     fn push(&mut self, value: u32) {
-      // TODO: We currently don't have a syncrhonization primitive so we'll
-      // just have to use a tight loop for now
       loop {
         {
           let mut lock = self.inner.lock_mut(TIMEOUT).unwrap();
+          let was_empty = lock.empty();
           if lock.push(value) {
+            if was_empty {
+              self.value_available.signal().unwrap();
+            }
             break;
           }
+          self.slot_available.clear().unwrap();
         }
+        self.slot_available.wait(TIMEOUT).unwrap();
       }
     }
 
     fn close(&mut self) {
       let mut lock = self.inner.lock_mut(TIMEOUT).unwrap();
       lock.close();
+      // Signal consumers to wake up and see the is_closed value
+      self.value_available.signal().unwrap();
     }
   }
 
@@ -74,6 +87,12 @@ pub fn test_locking() {
     read_head: u32,
     write_head: u32,
     queue: MappableVec<u32>,
+  }
+
+  impl<'t> QueueMutableRef<'t> {
+    fn is_closed(&self) -> bool {
+      *self.closed == 1
+    }
   }
 
   impl<'t> QueueMutableMut<'t> {
@@ -125,6 +144,8 @@ pub fn test_locking() {
   }
 
   let queue = Queue {
+    slot_available: Event::new(),
+    value_available: Event::new(),
     inner: Mutex::new(QueueMutable {
       closed: 0,
       read_head: 0,
@@ -146,7 +167,10 @@ pub fn test_locking() {
   let raw_bytes = RawBytes::from_slice(aligned_data);
 
   fn consumer_thread_function(raw_bytes: RawBytes) -> Vec<u32> {
-    let mut queue = raw_bytes.map_mut::<Queue>();
+    let queue = raw_bytes.map_mut::<Queue>();
+    // Since Shm only returns a Ref we need to simulate that so that we don't
+    // accidentally rely on direct mutable access
+    let mut queue : QueueRef<'_> = Queue::to_immutable(queue);
 
     let mut result = Vec::new();
     loop {
@@ -171,7 +195,8 @@ pub fn test_locking() {
   });
 
   let slicer_mut = SlicerMut::new(aligned_data);
-  let (_slicer, mut queue) = Queue::map_mut(slicer_mut).unwrap();
+  let (_slicer, queue) = Queue::map_mut(slicer_mut).unwrap();
+  let mut queue = Queue::to_immutable(queue);
 
   let element_count = 100;
   for i in 0..element_count {
@@ -220,13 +245,17 @@ fn test_mutex_timeout() {
   let raw_bytes = RawBytes::from_slice(aligned_data);
 
   fn thread_function(raw_bytes: RawBytes) -> Result<(), Error> {
-    let mut foo_mut = raw_bytes.map_mut::<Foo>();
-    foo_mut.inner.lock_mut(Duration::from_secs(1))?;
+    let foo_mut = raw_bytes.map_mut::<Foo>();
+    let mut foo = Foo::to_immutable(foo_mut);
+
+    foo.inner.lock_mut(Duration::from_secs(1))?;
     Ok(())
   }
 
-  let mut foo_mut = raw_bytes.map_mut::<Foo>();
-  let lock = foo_mut.inner.lock_mut(Duration::from_secs(1)).unwrap();
+  let foo_mut = raw_bytes.map_mut::<Foo>();
+  let mut foo = Foo::to_immutable(foo_mut);
+
+  let lock = foo.inner.lock_mut(Duration::from_secs(1)).unwrap();
 
   let thread1 = thread::spawn(move || {
     thread_function(raw_bytes)
