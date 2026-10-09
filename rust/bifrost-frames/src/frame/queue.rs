@@ -127,5 +127,18 @@ impl FrameQueue {
   pub fn close(&mut self) -> Result<(), Error> {
     Ok(self.queue.close()?)
   }
+
+  pub fn size(&self) -> usize {
+    self.queue.size()
+  }
+
+  pub fn migrate(
+    &mut self,
+    new_name: Name,
+    new_size: usize
+  ) -> Result<FrameQueue, Error> {
+    let queue = self.queue.migrate(new_name, new_size)?;
+    Ok(FrameQueue { queue })
+  }
 }
 

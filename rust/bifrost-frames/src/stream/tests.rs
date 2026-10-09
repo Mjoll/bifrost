@@ -86,7 +86,6 @@ fn test_stream_1() {
 }
 
 #[test]
-#[ignore] // Fails because the return queue does not dynamically resize at this point
 fn test_stream_2_pool_migration() {
   let stream_name = "bifrost-frames-test-stream-2";
 
