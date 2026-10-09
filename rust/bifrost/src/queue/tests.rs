@@ -8,6 +8,7 @@ use crate::{
   delete_shm,
   Error,
   FourCC,
+  LocalCache,
   Mutex,
   Name,
   Platform,
@@ -31,6 +32,8 @@ fn thread_function(
   queue_name: Name,
   return_queue_name: Name,
 ) -> Result<Vec<u64>, Error> {
+  let mut cache : LocalCache<Payload> = LocalCache::new();
+
   let mut queue : Queue<Platform, Payload> =
     Queue::open(queue_name).unwrap();
 
@@ -42,15 +45,15 @@ fn thread_function(
   let mut result = Vec::new();
 
   println!("Thread starting loop");
-  while let Some(mut shm) = queue.pop(timeout)? {
-    println!("Got Shm");
+  while let Some(mut shm) = queue.pop(timeout, Some(&mut cache))? {
+    println!("Got shm");
     {
       let mut payload = shm.data()?;
       let lock = payload.value.lock(timeout)?;
       result.push(**lock);
     }
     println!("Pushing onto return queue");
-    if !return_queue.try_push(&mut Some(shm))? {
+    if !return_queue.try_push(&mut Some(shm), Some(&mut cache))? {
       println!("Shm dropped because return queue was full");
     }
     println!("Pushing onto return queue complete");
@@ -64,11 +67,12 @@ fn main_thread_loop(
   queue_id: usize,
   queue: &mut Queue<Platform, Payload>,
   return_queue: &mut Queue<Platform, Payload>,
+  cache: &mut LocalCache<Payload>,
 ) -> Result<(), Error> {
   let timeout = Duration::from_secs(5);
   let mut name_id = 0;
   for i in 0..count {
-    let shm = match return_queue.try_pop()? {
+    let shm = match return_queue.try_pop(Some(cache))? {
       Some(mut shm) => {
         {
           let mut payload = shm.data()?;
@@ -90,7 +94,7 @@ fn main_thread_loop(
       }
     };
 
-    queue.push(&mut Some(shm), timeout)?;
+    queue.push(&mut Some(shm), timeout, Some(cache))?;
   }
 
   queue.close()?;
@@ -100,12 +104,15 @@ fn main_thread_loop(
 fn check_result(
   count: usize,
   result: Vec<u64>,
+  cache: &LocalCache<Payload>,
 ) {
   assert_eq!(result.len(), count as usize);
 
   for (index, value) in result.into_iter().enumerate() {
     assert_eq!(index, value as usize);
   }
+
+  assert!(cache.stats().cache_misses < 10);
 }
 
 #[test]
@@ -116,6 +123,8 @@ fn queue_test() {
 
   delete_shm(queue_name).unwrap();
   delete_shm(return_queue_name).unwrap();
+
+  let mut cache : LocalCache<Payload> = LocalCache::new();
 
   let mut queue : Queue<Platform, Payload> =
     Queue::new(queue_name, 5).unwrap();
@@ -135,9 +144,10 @@ fn queue_test() {
     2,
     &mut queue,
     &mut return_queue,
+    &mut cache,
   ).unwrap();
 
   let result : Vec<u64> = join_handle.join().unwrap().unwrap();
 
-  check_result(count, result);
+  check_result(count, result, &cache);
 }

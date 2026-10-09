@@ -1,4 +1,5 @@
 use std::{
+  collections::HashMap,
   marker::PhantomData,
   time::Duration,
 };
@@ -12,6 +13,33 @@ use super::{
   Shm,
   ShmData,
 };
+
+pub struct LocalCache<T: ShmData> {
+  cache: HashMap<Name, Shm<T>>,
+  stats: CacheStats,
+}
+
+impl<T: ShmData> LocalCache<T> {
+  pub fn new() -> LocalCache<T> {
+    LocalCache {
+      cache: HashMap::new(),
+      stats: CacheStats {
+        cache_hits: 0,
+        cache_misses: 0,
+      },
+    }
+  }
+
+  pub fn stats(&self) -> CacheStats {
+    self.stats
+  }
+}
+
+#[derive(Copy, Clone)]
+pub struct CacheStats {
+  pub cache_hits: usize,
+  pub cache_misses: usize,
+}
 
 pub struct Queue<P: PlatformTrait, T: ShmData> {
   name_queue: NameQueue<P>,
@@ -44,6 +72,7 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     &mut self,
     in_shm: &mut Option<Shm<T>>,
     timeout: Duration,
+    cache: Option<&mut LocalCache<T>>
   ) -> Result<(), Error> {
     let Some(mut shm) = in_shm.take() else {
       return Ok(())
@@ -60,12 +89,17 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     // The Shm no longer owns the memory, the queue does
     shm.release_ownership();
 
+    if let Some(cache) = cache {
+      cache.cache.insert(shm.name(), shm);
+    }
+
     Ok(())
   }
 
   pub fn try_push(
     &mut self,
     in_shm: &mut Option<Shm<T>>,
+    cache: Option<&mut LocalCache<T>>
   ) -> Result<bool, Error> {
     let Some(mut shm) = in_shm.take() else {
       return Ok(false)
@@ -88,28 +122,54 @@ impl<P: PlatformTrait, T: ShmData> Queue<P, T> {
     // The Shm no longer owns the memory, the queue does
     shm.release_ownership();
 
+    if let Some(cache) = cache {
+      cache.cache.insert(shm.name(), shm);
+    }
+
     Ok(true)
   }
 
   pub fn pop(
     &mut self,
     timeout: Duration,
+    cache: Option<&mut LocalCache<T>>,
   ) -> Result<Option<Shm<T>>, Error> {
     let Some(name) = self.name_queue.pop(timeout)? else {
       return Ok(None);
     };
 
 
+    if let Some(cache) = cache {
+      if let Some(mut shm) = cache.cache.remove(&name) {
+        cache.stats.cache_hits += 1;
+        shm.acquire_ownership();
+        return Ok(Some(shm));
+      }
+      cache.stats.cache_misses += 1;
+    }
+
     let mut shm = Shm::open(name)?;
     shm.acquire_ownership();
     Ok(Some(shm))
   }
 
-  pub fn try_pop(&mut self) -> Result<Option<Shm<T>>, Error> {
+  pub fn try_pop(
+    &mut self,
+    cache: Option<&mut LocalCache<T>>,
+  ) -> Result<Option<Shm<T>>, Error> {
     let Some(name) = self.name_queue.try_pop()? else {
       return Ok(None);
     };
 
+
+    if let Some(cache) = cache {
+      if let Some(mut shm) = cache.cache.remove(&name) {
+        cache.stats.cache_hits += 1;
+        shm.acquire_ownership();
+        return Ok(Some(shm));
+      }
+      cache.stats.cache_misses += 1;
+    }
 
     let mut shm = Shm::open(name)?;
     shm.acquire_ownership();
