@@ -27,3 +27,6 @@ pub use frame::{
   VideoFrameRef,
 };
 
+mod stream;
+pub use stream::Stream;
+

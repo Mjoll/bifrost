@@ -14,8 +14,18 @@ pub enum Error {
   BadFrameRate(Fraction),
   BadSampleRate(u32),
   NotAFrameQueue,
+  NotAStream,
   Timeout,
   QueueClosed,
+  StreamFormatChange,
+
+  /**
+   *  If the consumer hold a reference to a large number of frames and later
+   *  return them all to the Stream by calling release_frame this error may
+   *  be returned meaning that the pool is full. This can be fixed by
+   *  increasing pool size.
+   */
+  ReturnQueueFull,
 }
 
 impl From<bifrost::Error> for Error {
