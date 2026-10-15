@@ -1,0 +1,13 @@
+[package]
+name = "bifrost"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+shared_memory = "0.12.4"
+memory_mappable_derive = { path = "memory-mappable-derive" }
+libc = "0.2.189"
+
+[dev-dependencies]
+clap = { version = "4.6.7", features = ["derive"] }

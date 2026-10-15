@@ -1,0 +1,11 @@
+[package]
+name = "bifrost-frames"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bifrost = { path = "../bifrost" }
+bytemuck = "1.25.2"
+
+[dev-dependencies]
+clap = { version = "4.6.7", features = ["derive"] }

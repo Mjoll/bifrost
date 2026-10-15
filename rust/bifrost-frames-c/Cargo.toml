@@ -1,0 +1,29 @@
+[package]
+name = "bifrost-frames-c"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+bifrost-frames = { path = "../bifrost-frames" }
+
+[package.metadata.capi.library]
+name = "bifrost_frames_c"
+
+[package.metadata.capi.pkg_config]
+name = "bifrost-frames"
+filename = "bifrost-frames"
+description = "Bifrost shared memory frame transport"
+
+[package.metadata.capi.header]
+generation = false       # we ship a hand-written header instead of cbindgen
+subdirectory = false     # install to <includedir>/bifrost_frames.h, not <includedir>/bifrost-frames-c/
+
+[package.metadata.capi.install.include]
+asset = [{ from = "include/bifrost_frames.h" }]
+
+[features]
+# Marker feature cargo-c uses to find C-API crates in the workspace.
+capi = []
